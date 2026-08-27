@@ -1,0 +1,10 @@
+singleton Theme 1.0 Theme.qml
+TopBar 1.0 TopBar.qml
+NotificationOverlay 1.0 NotificationOverlay.qml
+NotificationCard 1.0 NotificationCard.qml
+SoundControl 1.0 SoundControl.qml
+BluetoothControl 1.0 BluetoothControl.qml
+NetworkControl 1.0 NetworkControl.qml
+CalendarControl 1.0 CalendarControl.qml
+MediaControl 1.0 MediaControl.qml
+PrivacyIndicators 1.0 PrivacyIndicators.qml
