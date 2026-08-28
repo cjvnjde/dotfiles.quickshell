@@ -68,6 +68,7 @@ Rectangle {
         }
 
         Text {
+            anchors.verticalCenter: parent.verticalCenter
             visible: root.activeWifi !== null
             width: Math.min(implicitWidth, 110)
             text: root.activeWifi ? root.activeWifi.name : ""

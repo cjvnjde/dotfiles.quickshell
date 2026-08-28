@@ -48,6 +48,7 @@ Rectangle {
         }
 
         Text {
+            anchors.verticalCenter: parent.verticalCenter
             text: root.available ? Math.round(root.volume * 100) + "%" : "N/A"
             color: Theme.text
             font.family: Theme.fontFamily

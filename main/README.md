@@ -40,8 +40,11 @@ through `qs -c main ipc call launcher show|hide|toggle`.
 - Network: click to manage Wi-Fi scanning and connections, including joining a
   secured network; right-click to toggle Wi-Fi power directly. Wired status is
   shown automatically when Ethernet is connected.
+- Language: shows the active keyboard layout as a two-letter language code and
+  updates immediately when the layout changes.
 - Calendar: click the clock to open a monthly calendar. Use the arrows to move
   between months or click the month title to return to today.
 
-The controls use Quickshell's native MPRIS, PipeWire, and BlueZ integrations
-and do not call external command-line tools.
+The controls use Quickshell's native MPRIS, PipeWire, and BlueZ integrations.
+The language indicator queries Hyprland once at startup and then follows its
+keyboard layout events.

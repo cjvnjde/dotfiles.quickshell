@@ -125,6 +125,8 @@ PanelWindow {
 
         NetworkControl {}
 
+        LanguageControl {}
+
         Rectangle {
             visible: SystemTray.items.values.length > 0
             width: visible ? trayRow.implicitWidth + Theme.controlHorizontalPadding * 2 : 0

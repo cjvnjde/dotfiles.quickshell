@@ -27,6 +27,7 @@ Rectangle {
         }
 
         Text {
+            anchors.verticalCenter: parent.verticalCenter
             visible: root.connectedDevices.length > 0
             text: root.connectedDevices.length
             color: Theme.text
