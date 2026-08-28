@@ -18,14 +18,24 @@ The bar reserves 24 pixels at the top of every display. Notifications appear in
 the upper-right corner with an even six-pixel gap from the bar and screen edge.
 They support application actions, and critical notifications remain visible until dismissed.
 
-## Application picker
+## Launcher
 
-Press `Super+T` to open the centered application picker. Type to filter
-installed desktop applications, use `Up`/`Down` to select one, and press
-`Enter` to launch it. `Escape` or a click outside the picker closes it.
+Press `Super+T` to open the centered launcher. It fuzzy-searches desktop
+applications, commands available in `PATH`, and built-in tools. Application
+names are preferred over commands, followed by system tools; exact matches,
+word boundaries, recent use, and launch frequency refine that order. Selecting
+a command opens it in Ghostty. A full invocation such as `git status` can be
+entered directly.
 
-The picker intentionally contains applications only. It can also be controlled
-through `qs -c main ipc call launcher show|hide|toggle`.
+Use `Up`/`Down` to select a result and `Enter` to launch it. Mathematical
+expressions are evaluated by Qalculate in the same input; `Enter` copies a
+displayed result to the clipboard. Arithmetic such as `2 + 2` works directly.
+Prefix richer expressions with `=` or `calc `, for example
+`= 10 km to miles`. This requires the `libqalculate` package, which provides
+`qalc`. `Escape` or a click outside the launcher closes it.
+
+The picker can also be controlled through
+`qs -c main ipc call launcher show|hide|toggle`.
 
 ## Bar controls
 
@@ -33,10 +43,13 @@ through `qs -c main ipc call launcher show|hide|toggle`.
   metadata, and previous, play/pause, and next controls.
 - Privacy: colored dots appear while the microphone, camera, or screen sharing
   is active (red, orange, and purple respectively).
-- Sound: click to open the volume slider, right-click to mute, or scroll over
-  the widget to change volume in 5% steps.
-- Bluetooth: click to manage power, discovery, pairing, and connections;
-  right-click the widget to toggle Bluetooth power directly.
+- Sound: click to open output and input volume controls, device pickers, and
+  per-application playback sliders. Right-click the widget to mute or unmute
+  output and input together, or scroll over it to change output volume in 5%
+  steps. Right-click any slider to mute only that channel.
+- Bluetooth: click to open the device popup. It scans while open, keeps
+  connected and paired devices first, and supports pairing, connection,
+  trust, and confirmed forgetting; right-click the widget to toggle power.
 - Network: click to manage Wi-Fi scanning and connections, including joining a
   secured network; right-click to toggle Wi-Fi power directly. Wired status is
   shown automatically when Ethernet is connected.
