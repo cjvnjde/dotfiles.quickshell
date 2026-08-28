@@ -16,8 +16,16 @@ located at `~/.config/quickshell/main`.
 
 The bar reserves 24 pixels at the top of every display. Notifications appear in
 the upper-right corner with an even six-pixel gap from the bar and screen edge.
-They support application actions, and critical notifications remain visible
-until dismissed.
+They support application actions, and critical notifications remain visible until dismissed.
+
+## Application picker
+
+Press `Super+T` to open the centered application picker. Type to filter
+installed desktop applications, use `Up`/`Down` to select one, and press
+`Enter` to launch it. `Escape` or a click outside the picker closes it.
+
+The picker intentionally contains applications only. It can also be controlled
+through `qs -c main ipc call launcher show|hide|toggle`.
 
 ## Bar controls
 

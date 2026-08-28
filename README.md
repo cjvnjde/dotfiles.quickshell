@@ -1,9 +1,9 @@
 # Quickshell configuration
 
 This module installs the Quickshell configuration used by the Hyprland setup.
-It provides the `main` shell configuration, including the top bar,
-notifications, media controls, privacy indicators, sound, Bluetooth, network,
-and calendar controls.
+It provides the `main` shell configuration, including the application picker,
+top bar, notifications, media controls, privacy indicators, sound, Bluetooth,
+network, and calendar controls.
 
 ## Setup
 
