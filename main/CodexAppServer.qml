@@ -103,8 +103,8 @@ Scope {
         id: process
 
         command: AiConfig.sbxCommand.concat([
-            "exec", "-i", root.sandboxName, "codex", "-c",
-            "check_for_update_on_startup=false", "app-server"
+            "exec", "-i", root.sandboxName, "sh", "-lc",
+            "exec codex -c check_for_update_on_startup=false app-server"
         ])
         stdinEnabled: true
 

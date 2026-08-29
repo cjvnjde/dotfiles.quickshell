@@ -39,6 +39,15 @@ Scope {
     property string deletingThreadId: ""
     property string currentTitle: "New conversation"
     property bool codexAuthorized: false
+    property bool syncingChatKit: false
+    property bool codexUpdating: false
+    property bool codexUpdateRequested: false
+    property bool rebuildingSandbox: false
+    property bool rebuildRequested: false
+    property string maintenanceNotice: ""
+    property string pendingMaintenanceNotice: ""
+    readonly property bool maintenanceStatusVisible: rebuildingSandbox
+        || codexUpdating || syncingChatKit || maintenanceNotice.length > 0
     readonly property bool conversationStarted: messageModel.count > 0
         || submissionStarting || isGenerating
     readonly property alias messages: messageModel
@@ -54,6 +63,15 @@ Scope {
     signal focusComposer()
 
     function statusForState(value) {
+        if (rebuildingSandbox) {
+            return "Rebuilding Codex sandbox…";
+        }
+        if (codexUpdating) {
+            return "Updating Codex…";
+        }
+        if (syncingChatKit) {
+            return "Loading AI chat kit…";
+        }
         if (sandboxSetupStage === "checking") {
             return "Checking Codex sandbox…";
         }
@@ -73,7 +91,7 @@ Scope {
             return "Connecting to Codex…";
         }
         if (value === "ready") {
-            return "Ready";
+            return maintenanceNotice.length > 0 ? maintenanceNotice : "Ready";
         }
         if (value === "streaming") {
             return "Codex is responding…";
@@ -252,10 +270,13 @@ Scope {
         const commands = [
             { label: "/file", detail: "Attach an image or text file", draft: "/file", immediate: true },
             { label: "/ps", detail: "Capture a screen region", draft: "/ps", immediate: true },
+            { label: "/copy", detail: "Copy the entire chat", draft: "/copy", immediate: true },
             { label: "/model", detail: "Change model", draft: "/model ", immediate: false },
             { label: "/thinking", detail: "Change thinking level", draft: "/thinking ", immediate: false },
             { label: "/new", detail: "Start a new chat", draft: "/new", immediate: true },
-            { label: "/reconnect", detail: "Reconnect the backend", draft: "/reconnect", immediate: true }
+            { label: "/reconnect", detail: "Reload the chat kit and backend", draft: "/reconnect", immediate: true },
+            { label: "/update", detail: "Update Codex and reconnect", draft: "/update", immediate: true },
+            { label: "/rebuild", detail: "Recreate the sandbox and update Codex", draft: "/rebuild", immediate: true }
         ];
         return commands.filter(command => command.label.indexOf(lowered) === 0);
     }
@@ -277,6 +298,8 @@ Scope {
             pickFile();
         } else if (command === "/ps" || command === "/screenshot") {
             captureRegion();
+        } else if (command === "/copy") {
+            copyChat();
         } else if (command === "/model") {
             chooseModel(argument);
         } else if (command === "/thinking" || command === "/effort") {
@@ -285,6 +308,10 @@ Scope {
             newChat();
         } else if (command === "/reconnect") {
             reconnect();
+        } else if (command === "/update") {
+            requestCodexUpdate();
+        } else if (command === "/rebuild") {
+            requestSandboxRebuild();
         } else if (command === "/retry") {
             retryAttachment();
         } else if (command === "/discard") {
@@ -299,6 +326,323 @@ Scope {
         return String(value)
             .replace(/!\[/g, "\\![")
             .replace(/</g, "&lt;");
+    }
+
+    function markdownBlocks(value) {
+        const lines = String(value || "").split("\n");
+        const blocks = [];
+        let kind = "markdown";
+        let language = "";
+        let buffer = [];
+
+        function flushBlock() {
+            const text = buffer.join("\n");
+            if (kind === "code" || text.length > 0) {
+                blocks.push({
+                    kind: kind,
+                    language: language,
+                    text: text
+                });
+            }
+            buffer = [];
+        }
+
+        for (const line of lines) {
+            if (kind === "markdown") {
+                const openingFence = line.match(/^[ \t]*```([^`]*)$/);
+                if (openingFence !== null) {
+                    flushBlock();
+                    kind = "code";
+                    language = openingFence[1].trim();
+                } else {
+                    buffer.push(line);
+                }
+            } else if (/^[ \t]*```[ \t]*$/.test(line)) {
+                flushBlock();
+                kind = "markdown";
+                language = "";
+            } else {
+                buffer.push(line);
+            }
+        }
+        flushBlock();
+
+        if (blocks.length === 0) {
+            blocks.push({ kind: "markdown", language: "", text: "" });
+        }
+        return blocks;
+    }
+
+    function copyText(value) {
+        const text = String(value || "");
+        if (text.length === 0) {
+            return false;
+        }
+        clipboardBuffer.text = text;
+        clipboardBuffer.selectAll();
+        clipboardBuffer.copy();
+        clipboardBuffer.deselect();
+        return true;
+    }
+
+    function chatTranscript() {
+        const sections = [];
+        for (let index = 0; index < messageModel.count; index++) {
+            const message = messageModel.get(index);
+            if ((message.role !== "user" && message.role !== "assistant")
+                    || message.body.trim().length === 0) {
+                continue;
+            }
+            const label = message.role === "user" ? "You" : "AI";
+            sections.push(label + ":\n" + message.body.trim());
+        }
+        return sections.join("\n\n");
+    }
+
+    function copyChat() {
+        if (!copyText(chatTranscript())) {
+            lastError = "There is no conversation to copy yet.";
+            return false;
+        }
+        lastError = "";
+        return true;
+    }
+
+    function openLink(value) {
+        const link = String(value || "");
+        if (/^(https?:|mailto:)/i.test(link)) {
+            Qt.openUrlExternally(link);
+            return;
+        }
+        lastError = "Only web and email links can be opened from AI answers.";
+    }
+
+    function textFromBlocks(value) {
+        if (!Array.isArray(value)) {
+            return typeof value === "string" ? value : "";
+        }
+        const parts = [];
+        for (const entry of value) {
+            if (typeof entry === "string") {
+                parts.push(entry);
+            } else if (entry && entry.text !== undefined) {
+                parts.push(String(entry.text));
+            }
+        }
+        return parts.join("\n\n");
+    }
+
+    function prettyValue(value) {
+        if (value === undefined || value === null || value === "") {
+            return "";
+        }
+        if (typeof value === "string") {
+            return value;
+        }
+        try {
+            return JSON.stringify(value, null, 2);
+        } catch (error) {
+            return String(value);
+        }
+    }
+
+    function normalizedActivityStatus(value, fallback) {
+        const status = String(value || fallback || "streaming");
+        return status === "inProgress" ? "streaming" : status;
+    }
+
+    function activityStatusLabel(value) {
+        const status = normalizedActivityStatus(value, "");
+        if (status === "streaming") {
+            return "Running";
+        }
+        if (status === "completed") {
+            return "Done";
+        }
+        if (status === "failed") {
+            return "Failed";
+        }
+        if (status === "declined") {
+            return "Declined";
+        }
+        if (status === "interrupted") {
+            return "Stopped";
+        }
+        return titleCase(status);
+    }
+
+    function activityTitle(item) {
+        const type = String(item && item.type || "activity");
+        if (type === "turn" || type === "reasoning") {
+            return "Thinking";
+        }
+        if (type === "plan") {
+            return "Planning";
+        }
+        if (type === "commandExecution") {
+            return "Shell command";
+        }
+        if (type === "fileChange") {
+            return "Editing files";
+        }
+        if (type === "mcpToolCall") {
+            const context = item.appContext || {};
+            const owner = String(context.appName || item.server || "Tool");
+            const action = String(context.actionName || item.tool || "");
+            return action.length > 0 ? owner + ": " + action : owner;
+        }
+        if (type === "collabToolCall") {
+            return "Agent: " + String(item.tool || "collaboration");
+        }
+        if (type === "webSearch") {
+            return "Web search";
+        }
+        if (type === "imageGeneration") {
+            return "Generating image";
+        }
+        if (type === "imageView") {
+            return "Viewing image";
+        }
+        if (type === "sleep") {
+            return "Waiting";
+        }
+        if (type === "contextCompaction") {
+            return "Compacting conversation";
+        }
+        if (type === "enteredReviewMode") {
+            return "Reviewing";
+        }
+        if (type === "exitedReviewMode") {
+            return "Review complete";
+        }
+        if (type === "dynamicToolCall") {
+            return "Tool: " + String(item.tool || "call");
+        }
+        return titleCase(type.replace(/([a-z0-9])([A-Z])/g, "$1 $2"));
+    }
+
+    function activityBody(item) {
+        const type = String(item && item.type || "");
+        if (type === "reasoning") {
+            return textFromBlocks(item.summary) || textFromBlocks(item.content);
+        }
+        if (type === "plan") {
+            return String(item.text || "");
+        }
+        if (type === "commandExecution") {
+            const command = String(item.command || "");
+            return command.length > 0 ? "$ " + command : "";
+        }
+        if (type === "fileChange") {
+            const changes = Array.isArray(item.changes) ? item.changes : [];
+            return changes.map(change => {
+                const kind = String(change.kind || "change");
+                return titleCase(kind) + ": " + String(change.path || "");
+            }).join("\n");
+        }
+        if (type === "mcpToolCall" || type === "dynamicToolCall") {
+            return prettyValue(item.arguments);
+        }
+        if (type === "collabToolCall") {
+            return String(item.prompt || item.agentStatus || "");
+        }
+        if (type === "webSearch") {
+            return String(item.query || prettyValue(item.action));
+        }
+        if (type === "imageView") {
+            return String(item.path || "");
+        }
+        if (type === "imageGeneration") {
+            return String(item.revisedPrompt || "");
+        }
+        if (type === "sleep") {
+            const duration = Number(item.durationMs || 0);
+            return duration > 0 ? "Waiting " + (duration / 1000).toFixed(1) + " seconds" : "";
+        }
+        if (type === "enteredReviewMode" || type === "exitedReviewMode") {
+            return String(item.review || "");
+        }
+        return "";
+    }
+
+    function activityOutput(item) {
+        if (String(item && item.type || "") === "commandExecution") {
+            return String(item.aggregatedOutput || "");
+        }
+        if (String(item && item.type || "") === "mcpToolCall") {
+            return prettyValue(item.error || item.result);
+        }
+        return "";
+    }
+
+    function findActivity(itemId) {
+        const requested = String(itemId || "");
+        for (let index = messageModel.count - 1; index >= 0; index--) {
+            const message = messageModel.get(index);
+            if (message.role === "activity" && message.itemId === requested) {
+                return index;
+            }
+        }
+        return -1;
+    }
+
+    function removeTurnPlaceholder() {
+        const index = findActivity("turn:" + currentTurnId);
+        if (index >= 0) {
+            messageModel.remove(index);
+        }
+    }
+
+    function appendTurnPlaceholder() {
+        const index = appendMessage("activity", "", "streaming", currentThreadId,
+            currentTurnId, "turn:" + currentTurnId, []);
+        messageModel.setProperty(index, "activityType", "turn");
+        messageModel.setProperty(index, "activityTitle", "Thinking");
+    }
+
+    function appendActivity(item, fallbackStatus) {
+        const itemId = String(item && item.id || "");
+        if (itemId.length === 0) {
+            return -1;
+        }
+        let index = findActivity(itemId);
+        const status = normalizedActivityStatus(item.status, fallbackStatus);
+        if (index < 0) {
+            index = appendMessage("activity", activityBody(item), status,
+                currentThreadId, currentTurnId, itemId, []);
+        } else {
+            const body = activityBody(item);
+            if (body.length > 0 || messageModel.get(index).body.length === 0) {
+                messageModel.setProperty(index, "body", body);
+            }
+            messageModel.setProperty(index, "messageStatus", status);
+        }
+        messageModel.setProperty(index, "activityType", String(item.type || "activity"));
+        messageModel.setProperty(index, "activityTitle", activityTitle(item));
+        const output = activityOutput(item);
+        if (output.length > 0) {
+            messageModel.setProperty(index, "activityOutput", output);
+        }
+        return index;
+    }
+
+    function appendActivityText(itemId, delta, output) {
+        const index = findActivity(itemId);
+        if (index < 0) {
+            return;
+        }
+        const role = output ? "activityOutput" : "body";
+        const current = String(messageModel.get(index)[role] || "");
+        const next = current + String(delta || "");
+        const limit = 12000;
+        messageModel.setProperty(index, role, next.length > limit
+            ? "…\n" + next.slice(next.length - limit) : next);
+    }
+
+    function isActivityItem(item) {
+        const type = String(item && item.type || "");
+        return type.length > 0 && type !== "agentMessage"
+            && type !== "userMessage" && type !== "functionCallOutput";
     }
 
     function beginSandboxSetupStage(stage, timeoutMs) {
@@ -319,6 +663,9 @@ Scope {
         sandboxSetupStage = "";
         discoveringSandbox = false;
         captureRequested = false;
+        rebuildRequested = false;
+        codexUpdateRequested = false;
+        pendingMaintenanceNotice = "";
         transport.state = "error";
         lastError = message;
         shown = true;
@@ -362,10 +709,11 @@ Scope {
 
     function startBackend() {
         if (resolvedSandboxName.length > 0) {
-            transport.start();
+            continueBackendStartup();
             return;
         }
-        if (sandboxSetupStage.length > 0 || sandboxSetupRunning) {
+        if (sandboxSetupStage.length > 0 || sandboxSetupRunning
+                || rebuildingSandbox || codexUpdating || syncingChatKit) {
             return;
         }
 
@@ -383,6 +731,115 @@ Scope {
             "rm", "-rf", "--", AiConfig.sandboxWorkspace
         ];
         resetSandboxWorkspace.running = true;
+    }
+
+    function continueBackendStartup() {
+        if (codexUpdateRequested) {
+            beginCodexUpdate();
+        } else {
+            syncChatKit();
+        }
+    }
+
+    function syncChatKit() {
+        if (resolvedSandboxName.length === 0 || chatKitSync.running) {
+            return;
+        }
+        transport.stop();
+        codexAuthorized = false;
+        syncingChatKit = true;
+        chatKitSync.running = true;
+    }
+
+    function showMaintenanceNotice(message) {
+        maintenanceNotice = message;
+        maintenanceNoticeTimer.restart();
+    }
+
+    function publishPendingMaintenanceNotice() {
+        if (pendingMaintenanceNotice.length === 0) {
+            return;
+        }
+        showMaintenanceNotice(pendingMaintenanceNotice);
+        pendingMaintenanceNotice = "";
+    }
+
+    function maintenanceBlocked() {
+        return attachmentsBusy || submissionStarting || isGenerating
+            || sandboxSetupRunning || syncingChatKit || codexUpdating
+            || rebuildingSandbox;
+    }
+
+    function requestCodexUpdate() {
+        if (maintenanceBlocked()) {
+            lastError = "Wait for the current chat operation to finish before updating Codex.";
+            return;
+        }
+        codexUpdateRequested = true;
+        pendingMaintenanceNotice = "Codex update complete";
+        lastError = "";
+        if (resolvedSandboxName.length === 0) {
+            startBackend();
+        } else {
+            beginCodexUpdate();
+        }
+    }
+
+    function beginCodexUpdate() {
+        if (resolvedSandboxName.length === 0 || codexUpdate.running) {
+            return;
+        }
+        transport.stop();
+        codexAuthorized = false;
+        codexUpdating = true;
+        codexUpdate.running = true;
+    }
+
+    function clearConversationForRebuild() {
+        conversationGeneration++;
+        overloadRetry.stop();
+        overloadRetry.pending = null;
+        currentThreadId = "";
+        currentTurnId = "";
+        currentTitle = "New conversation";
+        queuedSubmission = null;
+        submissionStarting = false;
+        isGenerating = false;
+        captureRequested = false;
+        pendingRequests = {};
+        pendingThreadDeletes = [];
+        deletingThreadId = "";
+        clearConversationFiles();
+        clearAttachments();
+        messageModel.clear();
+        screenshot.discard();
+    }
+
+    function beginSandboxRemoval() {
+        if (removeChatSandbox.running) {
+            return;
+        }
+        rebuildingSandbox = true;
+        removeChatSandbox.running = true;
+    }
+
+    function requestSandboxRebuild() {
+        if (maintenanceBlocked()) {
+            lastError = "Wait for the current chat operation to finish before rebuilding.";
+            return;
+        }
+        clearConversationForRebuild();
+        transport.stop();
+        codexAuthorized = false;
+        codexUpdateRequested = true;
+        rebuildRequested = true;
+        pendingMaintenanceNotice = "Sandbox rebuilt and Codex updated";
+        lastError = "";
+        if (resolvedSandboxName.length > 0) {
+            beginSandboxRemoval();
+        } else {
+            startBackend();
+        }
     }
 
     function close() {
@@ -497,12 +954,16 @@ Scope {
     }
 
     function reconnect() {
+        if (maintenanceBlocked()) {
+            lastError = "Wait for the current chat operation to finish before reconnecting.";
+            return;
+        }
         codexAuthorized = false;
         lastError = "";
         if (resolvedSandboxName.length === 0) {
             startBackend();
         } else {
-            transport.reconnect();
+            syncChatKit();
         }
     }
 
@@ -697,6 +1158,9 @@ Scope {
             turnId: turnId || "",
             itemId: itemId || "",
             attachments: attachmentEntries,
+            activityType: "",
+            activityTitle: "",
+            activityOutput: "",
             errorText: "",
             createdAt: new Date().toISOString()
         });
@@ -772,6 +1236,7 @@ Scope {
                 codexAuthorized = false;
                 transport.state = "error";
                 lastError = "Codex authentication is unavailable. Configure credentials for the sbx Codex agent.";
+                pendingMaintenanceNotice = "";
             } else {
                 codexAuthorized = true;
                 transport.reconnectAttempt = 0;
@@ -784,6 +1249,7 @@ Scope {
                         "threadResume", { generation: conversationGeneration });
                 } else {
                     transport.state = "ready";
+                    publishPendingMaintenanceNotice();
                     deleteNextQueuedThread();
                 }
             }
@@ -793,6 +1259,7 @@ Scope {
             const resumedThread = payload.thread || {};
             currentThreadId = String(resumedThread.id || currentThreadId);
             transport.state = "ready";
+            publishPendingMaintenanceNotice();
             deleteNextQueuedThread();
         } else if (pending.kind === "threadStart") {
             currentThreadId = String(payload.thread ? payload.thread.id : payload.threadId || "");
@@ -815,8 +1282,7 @@ Scope {
             conversationHostFiles = conversationHostFiles.concat(submittedHostPaths);
             appendMessage("user", submission.text, "completed", currentThreadId,
                 currentTurnId, "", submission.attachments);
-            appendMessage("assistant", "", "streaming", currentThreadId,
-                currentTurnId, "", []);
+            appendTurnPlaceholder();
             queuedSubmission = null;
             submissionStarting = false;
             isGenerating = true;
@@ -840,37 +1306,61 @@ Scope {
             currentTurnId = String(turn.id || params.turnId || currentTurnId);
             return;
         }
+        if (method === "item/started") {
+            const item = params.item || {};
+            if (isActivityItem(item)) {
+                removeTurnPlaceholder();
+                appendActivity(item, "streaming");
+            }
+            return;
+        }
         if (method === "item/agentMessage/delta") {
             const itemId = String(params.itemId || "");
             let index = findAssistantMessage(itemId);
             if (index < 0) {
-                index = findAssistantMessage("");
-                if (index >= 0) {
-                    messageModel.setProperty(index, "itemId", itemId);
-                } else {
-                    index = appendMessage("assistant", "", "streaming", currentThreadId,
-                        currentTurnId, itemId, []);
-                }
+                removeTurnPlaceholder();
+                index = appendMessage("assistant", "", "streaming", currentThreadId,
+                    currentTurnId, itemId, []);
             }
-            messageModel.setProperty(index, "body", messageModel.get(index).body + String(params.delta || ""));
+            messageModel.setProperty(index, "body",
+                messageModel.get(index).body + String(params.delta || ""));
+            return;
+        }
+        if (method === "item/reasoning/summaryPartAdded") {
+            const index = findActivity(String(params.itemId || ""));
+            if (index >= 0 && messageModel.get(index).body.length > 0) {
+                appendActivityText(params.itemId, "\n\n", false);
+            }
+            return;
+        }
+        if (method === "item/reasoning/summaryTextDelta"
+                || method === "item/reasoning/textDelta"
+                || method === "item/plan/delta") {
+            appendActivityText(params.itemId, params.delta, false);
+            return;
+        }
+        if (method === "item/commandExecution/outputDelta") {
+            appendActivityText(params.itemId, params.delta, true);
             return;
         }
         if (method === "item/completed") {
             const item = params.item || {};
-            if (item.type !== "agentMessage") {
-                return;
-            }
-            const itemId = String(item.id || params.itemId || "");
-            let index = findAssistantMessage(itemId);
-            if (index < 0) {
-                index = findAssistantMessage("");
-            }
-            if (index >= 0) {
+            if (item.type === "agentMessage") {
+                const itemId = String(item.id || params.itemId || "");
+                let index = findAssistantMessage(itemId);
+                if (index < 0) {
+                    removeTurnPlaceholder();
+                    index = appendMessage("assistant", "", "completed",
+                        currentThreadId, currentTurnId, itemId, []);
+                }
                 if (item.text !== undefined) {
                     messageModel.setProperty(index, "body", String(item.text));
                 }
                 messageModel.setProperty(index, "messageStatus", "completed");
                 messageModel.setProperty(index, "itemId", itemId);
+            } else if (isActivityItem(item)) {
+                removeTurnPlaceholder();
+                appendActivity(item, "completed");
             }
             return;
         }
@@ -880,8 +1370,9 @@ Scope {
                 || "The Codex turn failed.").slice(0, 600);
             lastError = message;
             for (let index = messageModel.count - 1; index >= 0; index--) {
-                if (messageModel.get(index).role === "assistant"
-                        && messageModel.get(index).messageStatus === "streaming") {
+                const entry = messageModel.get(index);
+                if (entry.role === "assistant"
+                        && entry.messageStatus === "streaming") {
                     messageModel.setProperty(index, "errorText", message);
                     break;
                 }
@@ -899,23 +1390,24 @@ Scope {
                 lastError = failureMessage;
             }
             isGenerating = false;
-            currentTurnId = "";
             transport.state = "ready";
             for (const attachment of currentTurnAttachments) {
                 screenshot.removeSandboxFile(attachment.sandboxPath);
             }
             currentTurnAttachments = [];
             for (let index = messageModel.count - 1; index >= 0; index--) {
-                if (messageModel.get(index).role === "assistant"
-                        && messageModel.get(index).messageStatus === "streaming") {
-                    messageModel.setProperty(index, "messageStatus",
-                        status === "completed" ? "completed" : status);
-                    if (failureMessage.length > 0) {
-                        messageModel.setProperty(index, "errorText", failureMessage);
-                    }
-                    break;
+                const entry = messageModel.get(index);
+                if (entry.turnId !== currentTurnId
+                        || entry.messageStatus !== "streaming") {
+                    continue;
+                }
+                messageModel.setProperty(index, "messageStatus",
+                    status === "completed" ? "completed" : status);
+                if (entry.role === "assistant" && failureMessage.length > 0) {
+                    messageModel.setProperty(index, "errorText", failureMessage);
                 }
             }
+            currentTurnId = "";
         }
     }
 
@@ -936,6 +1428,88 @@ Scope {
 
     ListModel { id: messageModel }
     ListModel { id: attachmentModel }
+
+    TextEdit {
+        id: clipboardBuffer
+        visible: false
+    }
+
+    Timer {
+        id: maintenanceNoticeTimer
+        interval: 4000
+        onTriggered: root.maintenanceNotice = ""
+    }
+
+    Process {
+        id: chatKitSync
+
+        command: [
+            "bash", Quickshell.shellPath("AiChatKitSync.sh"),
+            root.resolvedSandboxName
+        ]
+        stderr: StdioCollector { id: chatKitSyncError }
+        onExited: function(exitCode) {
+            root.syncingChatKit = false;
+            if (exitCode !== 0) {
+                const diagnostic = chatKitSyncError.text.trim().slice(0, 600);
+                root.pendingMaintenanceNotice = "";
+                transport.state = "error";
+                root.lastError = diagnostic.length > 0
+                    ? "Could not load the AI chat kit: " + diagnostic
+                    : "Could not load the AI chat kit into the sandbox.";
+                return;
+            }
+            transport.start();
+        }
+    }
+
+    Process {
+        id: codexUpdate
+
+        command: AiConfig.sbxCommand.concat([
+            "exec", root.resolvedSandboxName, "sh", "-lc", "exec codex update"
+        ])
+        stdout: StdioCollector { id: codexUpdateOutput }
+        stderr: StdioCollector { id: codexUpdateError }
+        onExited: function(exitCode) {
+            root.codexUpdating = false;
+            root.codexUpdateRequested = false;
+            if (exitCode !== 0) {
+                const diagnostic = (codexUpdateError.text.trim()
+                    || codexUpdateOutput.text.trim()).slice(0, 600);
+                root.pendingMaintenanceNotice = "";
+                root.lastError = diagnostic.length > 0
+                    ? "Codex update failed: " + diagnostic
+                    : "Codex update failed.";
+            }
+            root.syncChatKit();
+        }
+    }
+
+    Process {
+        id: removeChatSandbox
+
+        command: AiConfig.sbxCommand.concat([
+            "rm", "--force", AiConfig.sandboxName
+        ])
+        stderr: StdioCollector { id: removeChatSandboxError }
+        onExited: function(exitCode) {
+            root.rebuildingSandbox = false;
+            root.rebuildRequested = false;
+            if (exitCode !== 0) {
+                const diagnostic = removeChatSandboxError.text.trim().slice(0, 600);
+                root.codexUpdateRequested = false;
+                root.pendingMaintenanceNotice = "";
+                transport.state = "error";
+                root.lastError = diagnostic.length > 0
+                    ? "Could not rebuild the Codex sandbox: " + diagnostic
+                    : "Could not remove the Codex sandbox for rebuilding.";
+                return;
+            }
+            root.resolvedSandboxName = "";
+            root.startBackend();
+        }
+    }
 
     Timer {
         id: sandboxSetupTimeout
@@ -973,16 +1547,21 @@ Scope {
             const sandboxes = sandboxListOutput.text.split(/\r?\n/)
                 .map(name => name.trim()).filter(name => name.length > 0);
             if (sandboxes.indexOf(AiConfig.sandboxName) < 0) {
+                root.rebuildRequested = false;
                 root.createSandbox();
                 return;
             }
 
             root.resolvedSandboxName = AiConfig.sandboxName;
             root.finishSandboxSetup();
+            if (root.rebuildRequested) {
+                root.beginSandboxRemoval();
+                return;
+            }
             if (root.captureRequested) {
                 root.beginCapture();
             }
-            transport.start();
+            root.continueBackendStartup();
         }
     }
 
@@ -1057,7 +1636,7 @@ Scope {
             if (root.captureRequested) {
                 root.beginCapture();
             }
-            transport.start();
+            root.continueBackendStartup();
         }
     }
 
@@ -1098,18 +1677,18 @@ Scope {
                 }
                 if (root.isGenerating) {
                     root.isGenerating = false;
-                    root.currentTurnId = "";
                     for (const attachment of root.currentTurnAttachments) {
                         screenshot.removeSandboxFile(attachment.sandboxPath);
                     }
                     root.currentTurnAttachments = [];
                     for (let index = root.messages.count - 1; index >= 0; index--) {
-                        if (root.messages.get(index).role === "assistant"
-                                && root.messages.get(index).messageStatus === "streaming") {
+                        const message = root.messages.get(index);
+                        if (message.turnId === root.currentTurnId
+                                && message.messageStatus === "streaming") {
                             root.messages.setProperty(index, "messageStatus", "failed");
-                            break;
                         }
                     }
+                    root.currentTurnId = "";
                 }
                 if (transport.lastError.length > 0) {
                     root.lastError = transport.lastError;
@@ -1419,7 +1998,13 @@ Scope {
                             required property string body
                             required property string messageStatus
                             required property string errorText
+                            required property string itemId
+                            required property string activityType
+                            required property string activityTitle
+                            required property string activityOutput
                             required property var attachments
+                            property bool activityExpanded: false
+                            property bool answerCopied: false
                             readonly property int attachmentCount: attachments
                                 && attachments.count !== undefined
                                     ? attachments.count
@@ -1433,6 +2018,12 @@ Scope {
                                 text: body
                                 font.family: Theme.fontFamily
                                 font.pixelSize: 15
+                            }
+
+                            Timer {
+                                id: answerCopyReset
+                                interval: 1400
+                                onTriggered: answerCopied = false
                             }
 
                             Rectangle {
@@ -1513,28 +2104,334 @@ Scope {
 
                                     TextEdit {
                                         Layout.fillWidth: true
-                                        Layout.preferredHeight: contentHeight
-                                        visible: body.length > 0
-                                        text: role === "assistant"
-                                            ? root.safeAssistantMarkdown(body) : body
-                                        textFormat: role === "assistant"
-                                            ? Text.MarkdownText : Text.PlainText
+                                        Layout.preferredHeight: visible ? contentHeight : 0
+                                        visible: role !== "assistant" && role !== "activity"
+                                            && body.length > 0
+                                        text: body
+                                        textFormat: Text.PlainText
                                         wrapMode: Text.Wrap
                                         color: role === "notice" ? "#b4b4b4" : "#eeeeee"
+                                        selectionColor: "#515151"
+                                        selectedTextColor: "#ffffff"
                                         font.family: Theme.fontFamily
                                         font.pixelSize: 15
                                         readOnly: true
-                                        selectByMouse: role === "assistant"
+                                        selectByMouse: true
+                                    }
+
+                                    Rectangle {
+                                        id: activityCard
+                                        readonly property string detailText: body
+                                            + (activityOutput.length > 0
+                                                ? (body.length > 0 ? "\n\n" : "") + activityOutput
+                                                : "")
+
+                                        Layout.fillWidth: true
+                                        Layout.preferredHeight: visible
+                                            ? activityLayout.implicitHeight + 24 : 0
+                                        visible: role === "activity"
+                                        radius: 12
+                                        color: "#202020"
+                                        border.width: 1
+                                        border.color: "#343434"
+
+                                        ColumnLayout {
+                                            id: activityLayout
+                                            anchors {
+                                                left: parent.left
+                                                right: parent.right
+                                                top: parent.top
+                                                margins: 12
+                                            }
+                                            spacing: 8
+
+                                            RowLayout {
+                                                Layout.fillWidth: true
+                                                spacing: 10
+
+                                                Rectangle {
+                                                    Layout.preferredWidth: 9
+                                                    Layout.preferredHeight: 9
+                                                    radius: 5
+                                                    color: messageStatus === "failed"
+                                                        || messageStatus === "declined"
+                                                            ? Theme.red
+                                                            : messageStatus === "completed"
+                                                                ? Theme.green : Theme.blue
+
+                                                    SequentialAnimation on opacity {
+                                                        running: activityCard.visible
+                                                            && messageStatus === "streaming"
+                                                        loops: Animation.Infinite
+                                                        NumberAnimation {
+                                                            to: 0.3
+                                                            duration: 520
+                                                            easing.type: Easing.InOutSine
+                                                        }
+                                                        NumberAnimation {
+                                                            to: 1
+                                                            duration: 520
+                                                            easing.type: Easing.InOutSine
+                                                        }
+                                                    }
+                                                }
+
+                                                Text {
+                                                    Layout.fillWidth: true
+                                                    text: activityTitle
+                                                    color: "#e8e8e8"
+                                                    elide: Text.ElideRight
+                                                    font.family: Theme.fontFamily
+                                                    font.pixelSize: 13
+                                                    font.weight: Font.DemiBold
+                                                }
+
+                                                Text {
+                                                    text: root.activityStatusLabel(messageStatus)
+                                                    color: messageStatus === "failed"
+                                                        || messageStatus === "declined"
+                                                            ? Theme.red : "#858585"
+                                                    font.family: Theme.fontFamily
+                                                    font.pixelSize: 11
+                                                }
+                                            }
+
+                                            Text {
+                                                Layout.fillWidth: true
+                                                visible: activityCard.detailText.length > 0
+                                                text: activityCard.detailText
+                                                color: "#aaaaaa"
+                                                wrapMode: Text.WrapAnywhere
+                                                maximumLineCount: activityExpanded ? 1000 : 5
+                                                elide: Text.ElideRight
+                                                font.family: Theme.fontFamily
+                                                font.pixelSize: 12
+                                                lineHeight: 1.15
+                                            }
+                                        }
+
+                                        MouseArea {
+                                            anchors.fill: parent
+                                            enabled: activityCard.detailText.length > 0
+                                            cursorShape: enabled
+                                                ? Qt.PointingHandCursor : Qt.ArrowCursor
+                                            onClicked: activityExpanded = !activityExpanded
+                                        }
+                                    }
+
+                                    ColumnLayout {
+                                        Layout.fillWidth: true
+                                        Layout.preferredHeight: visible ? implicitHeight : 0
+                                        visible: role === "assistant" && body.length > 0
+                                        spacing: 10
+
+                                        Repeater {
+                                            model: root.markdownBlocks(body)
+
+                                            ColumnLayout {
+                                                required property var modelData
+                                                Layout.fillWidth: true
+                                                spacing: 0
+
+                                                TextEdit {
+                                                    Layout.fillWidth: true
+                                                    Layout.preferredHeight: visible
+                                                        ? contentHeight : 0
+                                                    visible: modelData.kind === "markdown"
+                                                        && modelData.text.length > 0
+                                                    text: root.safeAssistantMarkdown(modelData.text)
+                                                    textFormat: Text.MarkdownText
+                                                    wrapMode: Text.Wrap
+                                                    color: "#eeeeee"
+                                                    selectionColor: "#515151"
+                                                    selectedTextColor: "#ffffff"
+                                                    font.family: Theme.fontFamily
+                                                    font.pixelSize: 15
+                                                    readOnly: true
+                                                    selectByMouse: true
+                                                    onLinkActivated: link => root.openLink(link)
+                                                }
+
+                                                Rectangle {
+                                                    id: codeBlock
+                                                    property bool copied: false
+
+                                                    Layout.fillWidth: true
+                                                    Layout.preferredHeight: visible
+                                                        ? codeLayout.implicitHeight + 20 : 0
+                                                    visible: modelData.kind === "code"
+                                                    radius: 10
+                                                    color: "#111111"
+                                                    border.width: 1
+                                                    border.color: "#343434"
+
+                                                    Timer {
+                                                        id: codeCopyReset
+                                                        interval: 1400
+                                                        onTriggered: codeBlock.copied = false
+                                                    }
+
+                                                    ColumnLayout {
+                                                        id: codeLayout
+                                                        anchors {
+                                                            left: parent.left
+                                                            right: parent.right
+                                                            top: parent.top
+                                                            margins: 10
+                                                        }
+                                                        spacing: 8
+
+                                                        RowLayout {
+                                                            Layout.fillWidth: true
+
+                                                            Text {
+                                                                Layout.fillWidth: true
+                                                                text: modelData.language.length > 0
+                                                                    ? modelData.language : "code"
+                                                                color: "#858585"
+                                                                font.family: Theme.fontFamily
+                                                                font.pixelSize: 11
+                                                            }
+
+                                                            Rectangle {
+                                                                Layout.preferredWidth: 30
+                                                                Layout.preferredHeight: 26
+                                                                radius: 7
+                                                                color: codeCopyMouse.containsMouse
+                                                                    ? "#343434" : "#242424"
+
+                                                                Item {
+                                                                    anchors.centerIn: parent
+                                                                    width: 15
+                                                                    height: 15
+
+                                                                    Rectangle {
+                                                                        x: 4
+                                                                        width: 10
+                                                                        height: 10
+                                                                        radius: 1
+                                                                        color: "transparent"
+                                                                        border.width: 1
+                                                                        border.color: codeBlock.copied
+                                                                            ? Theme.green : "#b5b5b5"
+                                                                    }
+
+                                                                    Rectangle {
+                                                                        y: 4
+                                                                        width: 10
+                                                                        height: 10
+                                                                        radius: 1
+                                                                        color: codeCopyMouse.containsMouse
+                                                                            ? "#343434" : "#242424"
+                                                                        border.width: 1
+                                                                        border.color: codeBlock.copied
+                                                                            ? Theme.green : "#b5b5b5"
+                                                                    }
+                                                                }
+
+                                                                MouseArea {
+                                                                    id: codeCopyMouse
+                                                                    anchors.fill: parent
+                                                                    hoverEnabled: true
+                                                                    cursorShape: Qt.PointingHandCursor
+                                                                    onClicked: {
+                                                                        if (root.copyText(modelData.text)) {
+                                                                            codeBlock.copied = true;
+                                                                            codeCopyReset.restart();
+                                                                        }
+                                                                    }
+                                                                }
+                                                            }
+                                                        }
+
+                                                        TextEdit {
+                                                            Layout.fillWidth: true
+                                                            Layout.preferredHeight: contentHeight
+                                                            text: modelData.text
+                                                            textFormat: Text.PlainText
+                                                            wrapMode: TextEdit.WrapAnywhere
+                                                            color: "#d8d8d8"
+                                                            selectionColor: "#515151"
+                                                            selectedTextColor: "#ffffff"
+                                                            font.family: Theme.fontFamily
+                                                            font.pixelSize: 13
+                                                            readOnly: true
+                                                            selectByMouse: true
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+
+                                        RowLayout {
+                                            Layout.fillWidth: true
+                                            Layout.preferredHeight: 28
+
+                                            Item { Layout.fillWidth: true }
+
+                                            Rectangle {
+                                                Layout.preferredWidth: 32
+                                                Layout.preferredHeight: 28
+                                                radius: 8
+                                                color: answerCopyMouse.containsMouse
+                                                    ? "#2d2d2d" : "transparent"
+
+                                                Item {
+                                                    anchors.centerIn: parent
+                                                    width: 15
+                                                    height: 15
+
+                                                    Rectangle {
+                                                        x: 4
+                                                        width: 10
+                                                        height: 10
+                                                        radius: 1
+                                                        color: "transparent"
+                                                        border.width: 1
+                                                        border.color: answerCopied
+                                                            ? Theme.green : "#9b9b9b"
+                                                    }
+
+                                                    Rectangle {
+                                                        y: 4
+                                                        width: 10
+                                                        height: 10
+                                                        radius: 1
+                                                        color: answerCopyMouse.containsMouse
+                                                            ? "#2d2d2d" : "#171717"
+                                                        border.width: 1
+                                                        border.color: answerCopied
+                                                            ? Theme.green : "#9b9b9b"
+                                                    }
+                                                }
+
+                                                MouseArea {
+                                                    id: answerCopyMouse
+                                                    anchors.fill: parent
+                                                    hoverEnabled: true
+                                                    cursorShape: Qt.PointingHandCursor
+                                                    onClicked: {
+                                                        if (root.copyText(body)) {
+                                                            answerCopied = true;
+                                                            answerCopyReset.restart();
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
                                     }
 
                                     Text {
-                                        visible: messageStatus !== "completed"
+                                        Layout.preferredHeight: visible ? implicitHeight : 0
+                                        visible: role !== "activity"
+                                            && (messageStatus !== "completed"
+                                                || errorText.length > 0)
+                                        text: errorText.length > 0 ? errorText
+                                            : messageStatus === "streaming"
+                                                ? "Responding…" : messageStatus
+                                        color: messageStatus === "failed"
                                             || errorText.length > 0
-                                        text: messageStatus === "streaming" && body.length === 0
-                                            ? "Thinking"
-                                            : errorText.length > 0 ? errorText : messageStatus
-                                        color: messageStatus === "failed" || errorText.length > 0
-                                            ? Theme.red : "#777777"
+                                                ? Theme.red : "#777777"
                                         font.family: Theme.fontFamily
                                         font.pixelSize: 13
                                         wrapMode: Text.Wrap
@@ -1818,15 +2715,21 @@ Scope {
                                                 width: 7
                                                 height: 7
                                                 radius: 3.5
-                                                color: root.codexAuthorized
-                                                    ? Theme.green : "#666666"
+                                                color: root.maintenanceStatusVisible
+                                                    ? Theme.blue
+                                                    : root.codexAuthorized
+                                                        ? Theme.green : "#666666"
                                             }
 
                                             Text {
-                                                text: root.codexAuthorized
-                                                    ? "Authorized via sbx" : root.statusText
-                                                color: root.codexAuthorized
-                                                    ? "#a8b8a4" : "#858585"
+                                                text: root.maintenanceStatusVisible
+                                                    ? root.statusText
+                                                    : root.codexAuthorized
+                                                        ? "Authorized via sbx" : root.statusText
+                                                color: root.maintenanceStatusVisible
+                                                    ? Theme.blue
+                                                    : root.codexAuthorized
+                                                        ? "#a8b8a4" : "#858585"
                                                 font.family: Theme.fontFamily
                                                 font.pixelSize: 11
                                             }
