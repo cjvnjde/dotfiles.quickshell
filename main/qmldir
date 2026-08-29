@@ -1,4 +1,7 @@
 singleton Theme 1.0 Theme.qml
+singleton AiConfig 1.0 AiConfig.qml
+CodexAppServer 1.0 CodexAppServer.qml
+ScreenshotService 1.0 ScreenshotService.qml
 singleton KeyboardLayout 1.0 KeyboardLayout.qml
 TopBar 1.0 TopBar.qml
 NotificationOverlay 1.0 NotificationOverlay.qml
@@ -11,3 +14,4 @@ CalendarControl 1.0 CalendarControl.qml
 MediaControl 1.0 MediaControl.qml
 PrivacyIndicators 1.0 PrivacyIndicators.qml
 AppLauncher 1.0 AppLauncher.qml
+AiChat 1.0 AiChat.qml

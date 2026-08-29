@@ -37,6 +37,93 @@ Prefix richer expressions with `=` or `calc `, for example
 The picker can also be controlled through
 `qs -c main ipc call launcher show|hide|toggle`.
 
+## AI Quick Chat
+
+Press `Super+A` to open a compact AI chat overlay, or `Super+Shift+A` to select
+a screen region and attach its untouched PNG to a new prompt. The interface is
+a minimal dark composer that expands into the current conversation. Its footer
+shows a screenshot-style plus control, the active Codex model and thinking
+level, and a compact circular send button that becomes a stop button while a
+response is streaming. The plus control opens an image picker for PNG, JPEG,
+and WebP files. Pasting while the composer is focused also attaches a clipboard
+image without interfering with normal text paste.
+
+Type `/` in the composer to open the command palette. `/ps` captures a screen
+region, `/model` changes the active model, `/thinking` changes reasoning effort,
+`/new` starts a clean chat, and `/reconnect` restarts a failed connection.
+Model and thinking choices come from app-server's `model/list` response and are
+applied to subsequent turns. `Enter` executes a complete command immediately,
+accepts a highlighted partial command, or sends a message. `Shift+Enter`
+inserts a newline, and `Escape` hides the overlay without stopping an active
+response. The current in-memory conversation is preserved while the overlay is
+hidden.
+
+The feature owns one dedicated sandbox named `quickshell-ai-chat`, configured
+in [`AiConfig.qml`](AiConfig.qml). It creates that sandbox with `sbx create
+codex` and an otherwise empty private workspace below Quickshell's state
+directory. It never attaches the user's home or a project. New Chat removes
+and recreates only this dedicated sandbox, clearing its Codex history. The
+global host-side OAuth secret is injected when the new sandbox is created.
+Authenticate on the host with:
+
+```sh
+sbx secret set openai --oauth
+```
+
+The host needs the official Arch packages `quickshell`, `grim`, `slurp`,
+`wl-clipboard`, and `file`, plus Docker Sandboxes (`sbx`). No API key is used.
+Check the selected sandbox and installed protocol before starting Quickshell:
+
+```sh
+sbx ls
+sbx exec quickshell-ai-chat codex --version
+sbx exec quickshell-ai-chat codex app-server --help
+schema_dir="$(mktemp -d)"
+sbx exec quickshell-ai-chat codex app-server generate-ts --out "$schema_dir/ts"
+sbx exec quickshell-ai-chat codex app-server generate-json-schema --out "$schema_dir/json"
+```
+
+Available IPC calls are:
+
+```sh
+qs -c main ipc call ai toggle
+qs -c main ipc call ai open
+qs -c main ipc call ai close
+qs -c main ipc call ai screenshot
+qs -c main ipc call ai newChat
+```
+
+Set `QUICKSHELL_AI_DEBUG=1` to log sanitized lifecycle diagnostics. Prompt
+text, response bodies, image bytes, credentials, and complete account objects
+are never logged.
+
+Codex remains a coding agent and may run read-only commands inside its Docker
+sandbox. The client requests `approvalPolicy: never` and a read-only sandbox
+policy, declines command and file-change approvals, grants no requested
+permissions, and exposes no host-side shell controls. These controls restrict
+the agent inside the sandbox; they do not remove Codex's built-in shell tool.
+
+The Docker sandbox is the host security boundary. This feature mounts only its
+dedicated, mode-`0700` empty workspace below Quickshell's state directory; that
+workspace is reset before sandbox creation. It does not mount the user's home
+or a project. The only other host content transferred is a screenshot,
+clipboard image, or filesystem image explicitly selected by the user.
+
+Screenshot callbacks accept only helper-style PNG names. Clipboard and picker
+imports are copied first to private helper-style attachment names. Both paths
+must be regular PNG, JPEG, or WebP files directly inside the private runtime
+directory before Quickshell copies them to `/tmp/quickshell-ai` in the sandbox.
+The original picker file is never modified or removed. Sandbox copies are
+removed after turn completion. Managed host copies remain only while displayed,
+are removed by New Chat, and abandoned copies are removed on the next
+Quickshell start.
+
+OAuth uses Docker's credential proxy; the raw subscription token remains
+host-side. The app-server necessarily communicates with the Codex service, so
+this is not an offline feature. Model-provided Markdown image and raw-HTML
+syntax is neutralized before display so assistant output cannot make
+Quickshell load arbitrary host files or remote image URLs.
+
 ## Bar controls
 
 - Media: shows the active track as a plain bar label. Click it for artwork,

@@ -14,4 +14,6 @@ ShellRoot {
     NotificationOverlay {}
 
     AppLauncher {}
+
+    AiChat {}
 }
