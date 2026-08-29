@@ -50,7 +50,7 @@ Scope {
 
     function statusForState(value) {
         if (discoveringSandbox) {
-            return "Finding Codex sandbox…";
+            return "Checking Codex sandbox…";
         }
         if (value === "connecting") {
             return "Starting sandbox…";

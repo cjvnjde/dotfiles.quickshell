@@ -65,6 +65,9 @@ codex` and an otherwise empty private workspace below Quickshell's state
 directory. It never attaches the user's home or a project. New Chat deletes the
 previous Codex thread through app-server while keeping the sandbox and
 app-server connection alive, so the next message can start immediately.
+The embedded app-server disables Codex's startup update prompt. Sandbox and
+template maintenance remains manual instead of destructively rebuilding the
+sandbox whenever the overlay opens.
 Credentials remain managed by Docker Sandboxes and are not copied into the
 Quickshell process or private workspace. Confirm Codex access with:
 
