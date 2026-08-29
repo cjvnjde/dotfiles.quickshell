@@ -46,9 +46,11 @@ answers render as Markdown, open web and email links externally, provide an
 icon-only whole-answer copy action, and show fenced code in separate blocks
 with their own copy icons. Thinking summaries, shell commands, file changes,
 searches, and other app-server tool items appear as live, expandable activity
-cards. The footer shows the `sbx` authorization state, active Codex model and
-thinking level, and a compact circular send button that becomes a stop button
-while a response is streaming. Pasting while the composer is focused attaches a
+cards in detailed activity mode. Scrolling away from the newest message reveals
+a centered button above the composer that returns to the bottom. The footer
+shows the `sbx` authorization state, active Codex model and thinking level, and
+a compact circular send button that becomes a stop button while a response is
+streaming. Pasting while the composer is focused attaches a
 clipboard image without interfering with normal text paste.
 
 Type `/` at the start of the composer or after existing draft text to open the
@@ -56,8 +58,13 @@ command palette. Selecting an inline command removes only that command fragment
 and preserves the rest of the draft. `/file` hides the chat and opens a
 foreground picker for PNG, JPEG, WebP, and text files. `/ps` captures a screen
 region, `/copy` copies the user and assistant transcript, `/model` changes the
-active model, `/thinking` changes reasoning effort, and `/new` starts a clean
-chat. `/reconnect` reloads the chat-only kit and app-server. `/update` updates
+active model, and `/thinking` changes reasoning effort. `/activity detailed`
+shows every thinking and tool card retained in the conversation. `/activity
+compact` shows only the latest thinking or tool card while a response is
+running, then hides activity without discarding it; switching back to detailed
+reveals every card again.
+`/new` starts a clean chat. `/reconnect` reloads the chat-only kit and
+app-server. `/update` updates
 Codex inside the existing sandbox, then reconnects. `/rebuild` deletes and
 recreates the dedicated sandbox, updates Codex, reloads the kit, and starts a
 new chat. Model and thinking choices come from app-server's `model/list`

@@ -5,11 +5,13 @@ import "AiChatLogic.js" as AiChatLogic
 Item {
 
     required property var controller
+    required property int index
     required property string role
     required property string body
     required property string messageStatus
     required property string errorText
     required property string itemId
+    required property string turnId
     required property string activityType
     required property string activityTitle
     required property string activityOutput
@@ -21,8 +23,14 @@ Item {
             ? attachments.count
             : attachments && attachments.length
                 ? attachments.length : 0
-    width: ListView.view.width
-    implicitHeight: messageBubble.implicitHeight
+    readonly property bool activityVisible: role !== "activity"
+        || controller.activityMode === "detailed"
+        || (controller.isGenerating && turnId === controller.currentTurnId
+            && itemId === controller.latestActivityItemId)
+    readonly property real topSpacing: activityVisible && index > 0 ? 24 : 0
+    visible: activityVisible
+    implicitHeight: activityVisible
+        ? messageBubble.implicitHeight + topSpacing : 0
 
     TextMetrics {
         id: messageMetrics
@@ -39,6 +47,7 @@ Item {
 
     Rectangle {
         id: messageBubble
+        y: topSpacing
         width: role === "user"
             ? Math.min(parent.width * 0.78,
                 Math.max(attachmentCount > 0 ? 320 : 88,
@@ -157,6 +166,22 @@ Item {
                             font.family: Theme.fontFamily
                             font.pixelSize: 11
                         }
+
+                        Text {
+                            visible: activityCard.detailText.length > 0
+                            text: "›"
+                            rotation: activityExpanded ? 90 : 0
+                            color: "#858585"
+                            font.family: Theme.fontFamily
+                            font.pixelSize: 18
+
+                            Behavior on rotation {
+                                NumberAnimation {
+                                    duration: 100
+                                    easing.type: Easing.OutCubic
+                                }
+                            }
+                        }
                     }
 
                     Text {
@@ -182,14 +207,36 @@ Item {
                 }
             }
 
+            TextEdit {
+                Layout.fillWidth: true
+                Layout.preferredHeight: visible ? contentHeight : 0
+                visible: role === "assistant"
+                    && messageStatus === "streaming"
+                    && body.length > 0
+                text: AiChatLogic.safeAssistantMarkdown(body)
+                textFormat: Text.MarkdownText
+                wrapMode: Text.Wrap
+                color: "#eeeeee"
+                selectionColor: "#515151"
+                selectedTextColor: "#ffffff"
+                font.family: Theme.fontFamily
+                font.pixelSize: 15
+                readOnly: true
+                selectByMouse: true
+                onLinkActivated: link => controller.openLink(link)
+            }
+
             ColumnLayout {
                 Layout.fillWidth: true
                 Layout.preferredHeight: visible ? implicitHeight : 0
-                visible: role === "assistant" && body.length > 0
+                visible: role === "assistant"
+                    && messageStatus !== "streaming"
+                    && body.length > 0
                 spacing: 10
 
                 Repeater {
-                    model: AiChatLogic.markdownBlocks(body)
+                    model: messageStatus === "streaming"
+                        ? [] : AiChatLogic.markdownBlocks(body)
 
                     ColumnLayout {
                         required property var modelData

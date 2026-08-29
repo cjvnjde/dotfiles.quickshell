@@ -10,7 +10,7 @@ Item {
     function commandItems(draft) {
         return AiChatLogic.commandItems(draft, controller.availableModels,
             controller.selectedModel, controller.supportedEfforts,
-            controller.selectedEffort);
+            controller.selectedEffort, controller.activityMode);
     }
 
     function focusComposer() {

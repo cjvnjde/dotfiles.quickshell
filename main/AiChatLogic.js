@@ -30,6 +30,12 @@ const COMMAND_CATALOG = [
         immediate: false
     },
     {
+        label: "/activity",
+        detail: "Choose detailed or compact activity",
+        draft: "/activity ",
+        immediate: false
+    },
+    {
         label: "/new",
         detail: "Start a new chat",
         draft: "/new",
@@ -144,7 +150,7 @@ function removeCommandDraft(draft) {
 }
 
 function commandItems(draft, availableModels, selectedModel,
-        supportedEfforts, selectedEffort) {
+        supportedEfforts, selectedEffort, activityMode) {
     const value = String(draft || "").replace(/^\s+/, "");
     const lowered = value.toLowerCase();
     if (lowered.indexOf("/model") === 0
@@ -175,6 +181,29 @@ function commandItems(draft, availableModels, selectedModel,
                 draft: "/thinking " + effort,
                 immediate: true
             }));
+    }
+    if (lowered.indexOf("/activity") === 0
+            && (lowered.length === 9 || lowered.charAt(9) === " ")) {
+        const query = lowered.slice(9).trim();
+        return [
+            {
+                label: "Detailed",
+                detail: activityMode === "detailed"
+                    ? "Current mode — keep thinking and tool cards"
+                    : "Keep thinking and tool cards",
+                draft: "/activity detailed",
+                immediate: true
+            },
+            {
+                label: "Compact",
+                detail: activityMode === "compact"
+                    ? "Current mode — show only the latest activity"
+                    : "Show only the latest activity",
+                draft: "/activity compact",
+                immediate: true
+            }
+        ].filter(mode => query.length === 0
+            || mode.label.toLowerCase().indexOf(query) >= 0);
     }
 
     return COMMAND_CATALOG.filter(

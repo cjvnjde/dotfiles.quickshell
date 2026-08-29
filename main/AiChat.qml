@@ -17,6 +17,8 @@ Scope {
     property string selectedModel: ""
     property string selectedModelName: "Codex"
     property string selectedEffort: "default"
+    property string activityMode: "detailed"
+    property string latestActivityItemId: ""
     property var availableModels: []
     property var supportedEfforts: []
     property var pendingRequests: ({})
@@ -129,6 +131,17 @@ Scope {
         return true;
     }
 
+    function chooseActivityMode(mode) {
+        const requested = String(mode || "").toLowerCase();
+        if (requested !== "detailed" && requested !== "compact") {
+            lastError = "Unknown activity mode. Use /activity detailed or /activity compact.";
+            return false;
+        }
+        activityMode = requested;
+        lastError = "";
+        return true;
+    }
+
     function updateModels(payload) {
         const models = AiChatLogic.modelsFromPayload(payload);
         availableModels = models;
@@ -161,9 +174,10 @@ Scope {
         const pieces = text.split(/\s+/);
         const command = pieces[0].toLowerCase();
         const argument = pieces.slice(1).join(" ");
-        if (command === "/model" && argument.length === 0
-                || (command === "/thinking" || command === "/effort")
-                    && argument.length === 0) {
+        const requiresArgument = command === "/model"
+            || command === "/thinking" || command === "/effort"
+            || command === "/activity";
+        if (requiresArgument && argument.length === 0) {
             return false;
         }
 
@@ -184,6 +198,9 @@ Scope {
         case "/thinking":
         case "/effort":
             chooseEffort(argument);
+            break;
+        case "/activity":
+            chooseActivityMode(argument);
             break;
         case "/new":
             newChat();
@@ -267,6 +284,9 @@ Scope {
     function removeTurnPlaceholder() {
         const index = findActivity("turn:" + currentTurnId);
         if (index >= 0) {
+            if (latestActivityItemId === "turn:" + currentTurnId) {
+                latestActivityItemId = "";
+            }
             messageModel.remove(index);
         }
     }
@@ -276,6 +296,7 @@ Scope {
             currentTurnId, "turn:" + currentTurnId, []);
         messageModel.setProperty(index, "activityType", "turn");
         messageModel.setProperty(index, "activityTitle", "Thinking");
+        latestActivityItemId = "turn:" + currentTurnId;
     }
 
     function appendActivity(item, fallbackStatus) {
@@ -475,6 +496,7 @@ Scope {
         overloadRetry.pending = null;
         currentThreadId = "";
         currentTurnId = "";
+        latestActivityItemId = "";
         currentTitle = "New conversation";
         queuedSubmission = null;
         submissionStarting = false;
@@ -580,6 +602,7 @@ Scope {
         }
         currentThreadId = "";
         currentTurnId = "";
+        latestActivityItemId = "";
         currentTitle = "New conversation";
         queuedSubmission = null;
         submissionStarting = false;
@@ -984,7 +1007,10 @@ Scope {
             const item = params.item || {};
             if (AiChatLogic.isActivityItem(item)) {
                 removeTurnPlaceholder();
-                appendActivity(item, "streaming");
+                const index = appendActivity(item, "streaming");
+                if (index >= 0) {
+                    latestActivityItemId = String(item.id || "");
+                }
             }
             return;
         }
@@ -1082,6 +1108,7 @@ Scope {
                 }
             }
             currentTurnId = "";
+            latestActivityItemId = "";
         }
     }
 
@@ -1363,6 +1390,7 @@ Scope {
                         }
                     }
                     root.currentTurnId = "";
+                    root.latestActivityItemId = "";
                 }
                 if (transport.lastError.length > 0) {
                     root.lastError = transport.lastError;
