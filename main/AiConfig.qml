@@ -5,7 +5,9 @@ import Quickshell
 
 QtObject {
     readonly property string sandboxName: "quickshell-ai-chat"
-    readonly property string sbxExecutable: Quickshell.env("HOME") + "/.local/bin/sbx"
+    readonly property var sbxCommand: [
+        "bash", Quickshell.shellPath("AiSbx.sh")
+    ]
     readonly property string sandboxWorkspace: Quickshell.stateDir + "/ai-sandbox-workspace"
     readonly property int sandboxCheckTimeoutMs: 20000
     readonly property int sandboxWorkspaceTimeoutMs: 15000

@@ -365,7 +365,7 @@ Scope {
             transport.start();
             return;
         }
-        if (sandboxSetupRunning) {
+        if (sandboxSetupStage.length > 0 || sandboxSetupRunning) {
             return;
         }
 
@@ -942,7 +942,7 @@ Scope {
 
         repeat: false
         onTriggered: {
-            if (!root.sandboxSetupRunning) {
+            if (root.sandboxSetupStage.length === 0) {
                 return;
             }
             const stage = root.sandboxSetupStage;
@@ -955,7 +955,7 @@ Scope {
     Process {
         id: sandboxDiscovery
 
-        command: [AiConfig.sbxExecutable, "ls", "-q"]
+        command: AiConfig.sbxCommand.concat(["ls", "-q"])
         stdout: StdioCollector { id: sandboxListOutput }
         stderr: StdioCollector { id: sandboxListError }
         onExited: function(exitCode) {
@@ -1023,10 +1023,10 @@ Scope {
                     "Could not create the private AI sandbox workspace.");
                 return;
             }
-            createChatSandbox.command = [
-                AiConfig.sbxExecutable, "create", "codex", AiConfig.sandboxWorkspace,
+            createChatSandbox.command = AiConfig.sbxCommand.concat([
+                "create", "codex", AiConfig.sandboxWorkspace,
                 "--name", AiConfig.sandboxName, "--quiet"
-            ];
+            ]);
             root.beginSandboxSetupStage(
                 "creating", AiConfig.sandboxCreateTimeoutMs);
             createChatSandbox.running = true;

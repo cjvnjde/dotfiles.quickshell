@@ -182,10 +182,10 @@ Scope {
     function beginCopy() {
         state = "copying";
         captured(token, hostPath, sandboxPath, attachmentKind, displayName);
-        prepareSandbox.command = [
-            AiConfig.sbxExecutable, "exec", sandboxName,
-            "mkdir", "-p", "-m", "700", AiConfig.sandboxAttachmentDirectory
-        ];
+        prepareSandbox.command = AiConfig.sbxCommand.concat([
+            "exec", sandboxName, "mkdir", "-p", "-m", "700",
+            AiConfig.sandboxAttachmentDirectory
+        ]);
         prepareSandbox.running = true;
     }
 
@@ -259,9 +259,9 @@ Scope {
             return;
         }
         Quickshell.execDetached({
-            command: [
-                AiConfig.sbxExecutable, "exec", root.sandboxName, "rm", "-f", "--", path
-            ]
+            command: AiConfig.sbxCommand.concat([
+                "exec", root.sandboxName, "rm", "-f", "--", path
+            ])
         });
     }
 
@@ -299,10 +299,9 @@ Scope {
                     + prepareSandboxError.text.trim().slice(0, 160), "copy");
                 return;
             }
-            copyToSandbox.command = [
-                AiConfig.sbxExecutable, "cp", root.hostPath,
-                root.sandboxName + ":" + root.sandboxPath
-            ];
+            copyToSandbox.command = AiConfig.sbxCommand.concat([
+                "cp", root.hostPath, root.sandboxName + ":" + root.sandboxPath
+            ]);
             copyToSandbox.running = true;
         }
     }

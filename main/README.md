@@ -77,6 +77,10 @@ sbx run codex
 
 The host needs the official Arch packages `quickshell`, `grim`, `slurp`,
 `wl-clipboard`, `file`, and `zenity`, plus Docker Sandboxes (`sbx`).
+The bundled `AiSbx.sh` launcher resolves the official
+`~/.docker/sbx/bin/sbx` installation first, then `~/.local/bin/sbx`, then the
+inherited `PATH`. Set `QUICKSHELL_SBX_EXECUTABLE` to an absolute executable
+path to override detection.
 Check the selected sandbox and installed protocol before starting Quickshell:
 
 ```sh
