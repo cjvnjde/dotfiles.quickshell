@@ -1,5 +1,4 @@
 import QtQuick
-import QtQuick.Dialogs
 import QtQuick.Layouts
 import Quickshell
 import Quickshell.Hyprland
@@ -30,8 +29,11 @@ Scope {
     property string resolvedSandboxName: ""
     property bool discoveringSandbox: false
     property bool captureRequested: false
-    property bool recreatingSandbox: false
+    property int conversationGeneration: 0
+    property var pendingThreadDeletes: []
+    property string deletingThreadId: ""
     property string currentTitle: "New conversation"
+    property bool codexAuthorized: false
     readonly property bool conversationStarted: messageModel.count > 0
         || submissionStarting || isGenerating
     readonly property alias messages: messageModel
@@ -174,6 +176,33 @@ Scope {
         return params;
     }
 
+    function commandDraft(draft) {
+        const text = String(draft || "");
+        for (let index = text.length - 1; index >= 0; index--) {
+            if (text.charAt(index) !== "/") {
+                continue;
+            }
+            if (index === 0 || /\s/.test(text.charAt(index - 1))) {
+                return text.slice(index);
+            }
+        }
+        return "";
+    }
+
+    function replaceCommandDraft(draft, replacement) {
+        const text = String(draft || "");
+        const command = commandDraft(text);
+        if (command.length === 0) {
+            return text;
+        }
+        return text.slice(0, text.length - command.length)
+            + String(replacement || "");
+    }
+
+    function removeCommandDraft(draft) {
+        return replaceCommandDraft(draft, "").replace(/\s+$/, "");
+    }
+
     function commandItems(draft) {
         const value = String(draft || "").replace(/^\s+/, "");
         const lowered = value.toLowerCase();
@@ -207,6 +236,7 @@ Scope {
         }
 
         const commands = [
+            { label: "/file", detail: "Attach an image or text file", draft: "/file", immediate: true },
             { label: "/ps", detail: "Capture a screen region", draft: "/ps", immediate: true },
             { label: "/model", detail: "Change model", draft: "/model ", immediate: false },
             { label: "/thinking", detail: "Change thinking level", draft: "/thinking ", immediate: false },
@@ -229,7 +259,9 @@ Scope {
                     && argument.length === 0) {
             return false;
         }
-        if (command === "/ps" || command === "/screenshot") {
+        if (command === "/file") {
+            pickFile();
+        } else if (command === "/ps" || command === "/screenshot") {
             captureRegion();
         } else if (command === "/model") {
             chooseModel(argument);
@@ -283,15 +315,6 @@ Scope {
         resetSandboxWorkspace.running = true;
     }
 
-    function recreateSandbox() {
-        transport.stop();
-        resolvedSandboxName = "";
-        recreatingSandbox = true;
-        discoveringSandbox = true;
-        removeChatSandbox.command = ["sbx", "rm", AiConfig.sandboxName, "--force"];
-        removeChatSandbox.running = true;
-    }
-
     function close() {
         shown = false;
     }
@@ -322,15 +345,14 @@ Scope {
         captureDelay.restart();
     }
 
-    function localPath(fileUrl) {
-        const value = decodeURIComponent(String(fileUrl || ""));
-        return value.startsWith("file://") ? value.slice(7) : value;
-    }
-
-    function importImage(fileUrl) {
-        const path = localPath(fileUrl);
-        if (path.length > 0) {
-            screenshot.importFile(path);
+    function pickFile() {
+        if (attachmentsBusy) {
+            return;
+        }
+        shown = false;
+        screenshot.pickFile();
+        if (resolvedSandboxName.length === 0) {
+            startBackend();
         }
     }
 
@@ -344,25 +366,34 @@ Scope {
             lastError = "Wait for the screenshot operation to finish or discard it.";
             return;
         }
+
+        const previousThreadId = currentThreadId;
         if (isGenerating) {
             stop();
         }
-        overloadRetry.stop();
-        overloadRetry.pending = null;
-        pendingRequests = {};
+        conversationGeneration++;
+        if (overloadRetry.pending !== null
+                && overloadRetry.pending.context.generation !== undefined) {
+            overloadRetry.stop();
+            overloadRetry.pending = null;
+        }
         currentThreadId = "";
         currentTurnId = "";
         currentTitle = "New conversation";
         queuedSubmission = null;
         submissionStarting = false;
+        isGenerating = false;
         captureRequested = false;
+        if (transport.state === "streaming") {
+            transport.state = "ready";
+        }
         clearConversationFiles();
         messageModel.clear();
         clearAttachments();
         screenshot.discard();
         lastError = "";
         focusComposer();
-        recreateSandbox();
+        queueThreadDeletion(previousThreadId);
     }
 
     function clearAttachments() {
@@ -396,6 +427,7 @@ Scope {
     }
 
     function reconnect() {
+        codexAuthorized = false;
         lastError = "";
         if (resolvedSandboxName.length === 0) {
             startBackend();
@@ -451,6 +483,36 @@ Scope {
         delete updated[requestId];
         pendingRequests = updated;
     }
+    function deleteNextQueuedThread() {
+        if (!transport.ready || deletingThreadId.length > 0
+                || pendingThreadDeletes.length === 0) {
+            return;
+        }
+
+        const threadId = pendingThreadDeletes[0];
+        const requestId = call("thread/delete", { threadId: threadId },
+            "threadDelete", { threadId: threadId });
+        if (requestId >= 0) {
+            deletingThreadId = threadId;
+        }
+    }
+
+    function finishThreadDeletion(threadId) {
+        deletingThreadId = "";
+        pendingThreadDeletes = pendingThreadDeletes.filter(
+            candidate => candidate !== threadId);
+        deleteNextQueuedThread();
+    }
+
+    function queueThreadDeletion(threadId) {
+        const requestedThreadId = String(threadId || "");
+        if (requestedThreadId.length === 0
+                || pendingThreadDeletes.indexOf(requestedThreadId) >= 0) {
+            return;
+        }
+        pendingThreadDeletes = pendingThreadDeletes.concat([requestedThreadId]);
+        deleteNextQueuedThread();
+    }
 
     function send(text) {
         const prompt = text.trim();
@@ -458,7 +520,7 @@ Scope {
             return;
         }
         if (prompt.length === 0 && attachmentModel.count === 0) {
-            lastError = "Write a message or attach a screenshot first.";
+            lastError = "Write a message or attach a file first.";
             return;
         }
         if (!transport.ready) {
@@ -473,13 +535,15 @@ Scope {
         for (let index = 0; index < attachmentModel.count; index++) {
             const attachment = attachmentModel.get(index);
             if (attachment.status !== "ready") {
-                lastError = "Wait for the screenshot to finish copying, or remove it.";
+                lastError = "Wait for the attachment to finish copying, or remove it.";
                 return;
             }
             attachments.push({
                 token: attachment.token,
                 hostPath: attachment.hostPath,
-                sandboxPath: attachment.sandboxPath
+                sandboxPath: attachment.sandboxPath,
+                kind: attachment.attachmentKind,
+                displayName: attachment.displayName
             });
         }
         queuedSubmission = { text: prompt, attachments: attachments };
@@ -494,7 +558,8 @@ Scope {
             if (selectedModel.length > 0) {
                 threadParams.model = selectedModel;
             }
-            call("thread/start", threadParams, "threadStart", {});
+            call("thread/start", threadParams, "threadStart",
+                { generation: conversationGeneration });
         } else {
             startQueuedTurn();
         }
@@ -511,7 +576,15 @@ Scope {
             input.push({ type: "text", text: queuedSubmission.text });
         }
         for (const attachment of queuedSubmission.attachments) {
-            input.push({ type: "localImage", path: attachment.sandboxPath });
+            if (attachment.kind === "image") {
+                input.push({ type: "localImage", path: attachment.sandboxPath });
+            } else {
+                input.push({
+                    type: "text",
+                    text: "A user-selected text file is available inside the sandbox at "
+                        + attachment.sandboxPath + ". Read it when relevant to the request."
+                });
+            }
         }
         call("turn/start", modelSettings({
             threadId: currentThreadId,
@@ -519,7 +592,10 @@ Scope {
             cwd: AiConfig.sandboxWorkingDirectory,
             approvalPolicy: "never",
             sandboxPolicy: { type: "readOnly" }
-        }), "turnStart", { submission: queuedSubmission });
+        }), "turnStart", {
+            submission: queuedSubmission,
+            generation: conversationGeneration
+        });
     }
 
     function stop() {
@@ -529,14 +605,18 @@ Scope {
         call("turn/interrupt", {
             threadId: currentThreadId,
             turnId: currentTurnId
-        }, "interrupt", {});
+        }, "interrupt", { generation: conversationGeneration });
     }
 
     function appendMessage(role, text, status, threadId, turnId, itemId, attachments) {
         const attachmentEntries = [];
-        const paths = attachments || [];
-        for (let index = 0; index < paths.length; index++) {
-            attachmentEntries.push({ hostPath: String(paths[index]) });
+        const items = attachments || [];
+        for (const item of items) {
+            attachmentEntries.push({
+                hostPath: String(item.hostPath || ""),
+                attachmentKind: String(item.kind || "image"),
+                displayName: String(item.displayName || "Attachment")
+            });
         }
         messageModel.append({
             messageId: Date.now().toString(36) + "-" + messageModel.count,
@@ -546,7 +626,7 @@ Scope {
             threadId: threadId || "",
             turnId: turnId || "",
             itemId: itemId || "",
-            attachmentPaths: attachmentEntries,
+            attachments: attachmentEntries,
             errorText: "",
             createdAt: new Date().toISOString()
         });
@@ -569,6 +649,16 @@ Scope {
             return;
         }
         forgetRequest(requestId);
+        const responseGeneration = pending.context.generation;
+        if (responseGeneration !== undefined
+                && responseGeneration !== conversationGeneration) {
+            if (succeeded && pending.kind === "threadStart") {
+                const staleThreadId = String(payload.thread
+                    ? payload.thread.id : payload.threadId || "");
+                queueThreadDeletion(staleThreadId);
+            }
+            return;
+        }
 
         if (!succeeded) {
             if (pending.kind === "modelList") {
@@ -579,6 +669,13 @@ Scope {
                 overloadRetry.pending = pending;
                 overloadRetry.interval = 500 + Math.floor(Math.random() * 350);
                 overloadRetry.restart();
+                return;
+            }
+            if (pending.kind === "threadDelete") {
+                const reason = String(payload.message || "unknown app-server error");
+                lastError = "New chat started, but Codex could not delete its "
+                    + "previous thread: " + reason;
+                finishThreadDeletion(pending.context.threadId);
                 return;
             }
             lastError = String(payload.message || "Codex rejected " + pending.method + ".");
@@ -600,23 +697,24 @@ Scope {
             transport.notify("initialized", {});
             call("account/read", { refreshToken: false }, "accountRead", {});
         } else if (pending.kind === "accountRead") {
-            const account = payload ? payload.account : null;
             const requiresOpenaiAuth = payload && payload.requiresOpenaiAuth === true;
-            if (requiresOpenaiAuth || (account && account.type === "apiKey")) {
+            if (requiresOpenaiAuth) {
+                codexAuthorized = false;
                 transport.state = "error";
-                lastError = account && account.type === "apiKey"
-                    ? "This chat requires subscription OAuth, not API-key billing. Run: sbx secret set openai --oauth"
-                    : "Codex authentication is unavailable. Run: sbx secret set openai --oauth";
+                lastError = "Codex authentication is unavailable. Configure credentials for the sbx Codex agent.";
             } else {
+                codexAuthorized = true;
                 transport.reconnectAttempt = 0;
                 call("model/list", {
                     limit: 100,
                     includeHidden: false
                 }, "modelList", {});
                 if (currentThreadId.length > 0) {
-                    call("thread/resume", { threadId: currentThreadId }, "threadResume", {});
+                    call("thread/resume", { threadId: currentThreadId },
+                        "threadResume", { generation: conversationGeneration });
                 } else {
                     transport.state = "ready";
+                    deleteNextQueuedThread();
                 }
             }
         } else if (pending.kind === "modelList") {
@@ -625,6 +723,7 @@ Scope {
             const resumedThread = payload.thread || {};
             currentThreadId = String(resumedThread.id || currentThreadId);
             transport.state = "ready";
+            deleteNextQueuedThread();
         } else if (pending.kind === "threadStart") {
             currentThreadId = String(payload.thread ? payload.thread.id : payload.threadId || "");
             if (currentThreadId.length === 0) {
@@ -645,7 +744,7 @@ Scope {
             const submittedHostPaths = submission.attachments.map(item => item.hostPath);
             conversationHostFiles = conversationHostFiles.concat(submittedHostPaths);
             appendMessage("user", submission.text, "completed", currentThreadId,
-                currentTurnId, "", submittedHostPaths);
+                currentTurnId, "", submission.attachments);
             appendMessage("assistant", "", "streaming", currentThreadId,
                 currentTurnId, "", []);
             queuedSubmission = null;
@@ -654,10 +753,18 @@ Scope {
             transport.state = "streaming";
             attachmentModel.clear();
             submissionAccepted();
+        } else if (pending.kind === "threadDelete") {
+            finishThreadDeletion(pending.context.threadId);
         }
     }
 
     function handleNotification(method, params) {
+        const notificationThreadId = String(params.threadId || "");
+        if (notificationThreadId.length > 0
+                && notificationThreadId !== currentThreadId) {
+            return;
+        }
+
         if (method === "turn/started") {
             const turn = params.turn || {};
             currentTurnId = String(turn.id || params.turnId || currentTurnId);
@@ -763,7 +870,7 @@ Scope {
     Process {
         id: sandboxDiscovery
 
-        command: ["sbx", "ls", "-q"]
+        command: [AiConfig.sbxExecutable, "ls", "-q"]
         stdout: StdioCollector { id: sandboxListOutput }
         stderr: StdioCollector { id: sandboxListError }
         onExited: function(exitCode) {
@@ -825,7 +932,7 @@ Scope {
                 return;
             }
             createChatSandbox.command = [
-                "sbx", "create", "codex", AiConfig.sandboxWorkspace,
+                AiConfig.sbxExecutable, "create", "codex", AiConfig.sandboxWorkspace,
                 "--name", AiConfig.sandboxName, "--quiet"
             ];
             createChatSandbox.running = true;
@@ -838,7 +945,6 @@ Scope {
         stdout: StdioCollector {}
         stderr: StdioCollector { id: createSandboxError }
         onExited: function(exitCode) {
-            root.recreatingSandbox = false;
             root.discoveringSandbox = false;
             if (exitCode !== 0) {
                 transport.state = "error";
@@ -859,17 +965,6 @@ Scope {
         }
     }
 
-    Process {
-        id: removeChatSandbox
-
-        stdout: StdioCollector {}
-        stderr: StdioCollector {}
-        onExited: function(exitCode) {
-            // A missing dedicated sandbox is equivalent to an already-clean state.
-            root.createSandbox();
-        }
-    }
-
     CodexAppServer {
         id: transport
         sandboxName: root.resolvedSandboxName
@@ -885,6 +980,7 @@ Scope {
         }
         onStateChanged: {
             if (state === "initializing") {
+                root.deletingThreadId = "";
                 const updated = {};
                 root.pendingRequests = updated;
                 root.call("initialize", {
@@ -896,6 +992,8 @@ Scope {
                     capabilities: {}
                 }, "initialize", {});
             } else if (state === "error") {
+                root.deletingThreadId = "";
+                root.codexAuthorized = false;
                 overloadRetry.stop();
                 overloadRetry.pending = null;
                 if (root.submissionStarting) {
@@ -928,18 +1026,20 @@ Scope {
         id: screenshot
         sandboxName: root.resolvedSandboxName
 
-        onCaptured: (token, hostPath, sandboxPath) => {
+        onCaptured: (token, hostPath, sandboxPath, attachmentKind, displayName) => {
             attachmentModel.append({
                 token: token,
                 hostPath: hostPath,
                 sandboxPath: sandboxPath,
+                attachmentKind: attachmentKind,
+                displayName: displayName,
                 status: "copying",
                 errorText: ""
             });
             root.shown = true;
             Qt.callLater(() => root.focusComposer());
         }
-        onReady: (token, hostPath, sandboxPath) => {
+        onReady: (token, hostPath, sandboxPath, attachmentKind, displayName) => {
             const index = root.findAttachment(token);
             if (index >= 0) {
                 attachmentModel.setProperty(index, "status", "ready");
@@ -976,14 +1076,27 @@ Scope {
         property var pending: null
         repeat: false
         onTriggered: {
-            if (pending === null || !transport.ready) {
-                root.lastError = "Codex is busy; retry when the backend is ready.";
-                root.submissionStarting = false;
+            if (pending === null) {
+                return;
+            }
+            if (!transport.ready) {
+                if (pending.kind === "threadDelete") {
+                    root.deletingThreadId = "";
+                } else {
+                    root.lastError = "Codex is busy; retry when the backend is ready.";
+                    root.submissionStarting = false;
+                }
+                pending = null;
                 return;
             }
             const requestId = transport.request(pending.method, pending.params);
             if (requestId < 0) {
-                root.submissionStarting = false;
+                if (pending.kind === "threadDelete") {
+                    root.deletingThreadId = "";
+                } else {
+                    root.submissionStarting = false;
+                }
+                pending = null;
                 return;
             }
             pending.retryCount++;
@@ -1011,8 +1124,8 @@ Scope {
         function screenshotFailed(message: string): void {
             screenshot.failCapture(message);
         }
-        function attachImportedImage(path: string): void {
-            screenshot.acceptImportedImage(path);
+        function attachImportedFile(path: string, kind: string, displayName: string): void {
+            screenshot.acceptImportedFile(path, kind, displayName);
         }
         function attachmentCancelled(): void {
             screenshot.cancelImport();
@@ -1033,13 +1146,16 @@ Scope {
             readonly property bool focusedScreen: monitor !== null && monitor.focused
 
             function acceptMenuItem(item) {
-                composer.text = item.draft;
-                composer.cursorPosition = composer.length;
-                if (item.immediate && root.executeSlashCommand(composer.text)) {
-                    composer.clear();
-                } else {
-                    composer.forceActiveFocus();
+                if (item.immediate) {
+                    composer.text = root.removeCommandDraft(composer.text);
+                    composer.cursorPosition = composer.length;
+                    root.executeSlashCommand(item.draft);
+                    return;
                 }
+
+                composer.text = root.replaceCommandDraft(composer.text, item.draft);
+                composer.cursorPosition = composer.length;
+                composer.forceActiveFocus();
             }
 
             function submitComposer() {
@@ -1047,25 +1163,32 @@ Scope {
                     root.stop();
                     return;
                 }
+
                 const draft = composer.text.trim();
-                if (draft.charAt(0) === "/") {
-                    const items = root.commandItems(composer.text);
+                const activeCommand = root.commandDraft(composer.text);
+                if (activeCommand.length > 0) {
+                    const items = root.commandItems(activeCommand);
                     for (const item of items) {
-                        if (item.immediate && item.draft.trim() === draft
-                                && root.executeSlashCommand(draft)) {
-                            composer.clear();
+                        if (item.immediate
+                                && item.draft.trim() === activeCommand.trim()) {
+                            acceptMenuItem(item);
                             return;
                         }
                     }
                     if (commandPalette.visible && items.length > 0) {
                         acceptMenuItem(items[Math.max(0, commandList.currentIndex)]);
-                    } else if (root.executeSlashCommand(draft)) {
-                        composer.clear();
+                        return;
                     }
-                    return;
+                    if (draft === activeCommand.trim()) {
+                        if (root.executeSlashCommand(activeCommand)) {
+                            composer.clear();
+                        }
+                        return;
+                    }
                 }
                 root.send(composer.text);
             }
+
 
             screen: modelData
             visible: root.shown && (focusedScreen || Quickshell.screens.length === 1)
@@ -1088,13 +1211,6 @@ Scope {
                 onActivated: root.close()
             }
 
-            FileDialog {
-                id: attachmentDialog
-                title: "Attach an image"
-                fileMode: FileDialog.OpenFile
-                nameFilters: ["Images (*.png *.jpg *.jpeg *.webp)"]
-                onAccepted: root.importImage(selectedFile)
-            }
 
             Connections {
                 target: root
@@ -1116,13 +1232,13 @@ Scope {
                 anchors.centerIn: parent
                 width: Math.min(AiConfig.chatWidth, parent.width - 48)
                 height: root.conversationStarted
-                    ? Math.min(AiConfig.chatMaxHeight, parent.height * 0.78)
-                    : Math.min(Math.max(126, composerStack.implicitHeight + 4),
-                        parent.height - 24)
-                radius: root.conversationStarted ? 26 : 36
-                color: "#151515"
+                    ? Math.min(AiConfig.chatMaxHeight, parent.height * 0.86)
+                    : Math.min(Math.max(164, composerStack.implicitHeight + 4),
+                        parent.height - 32)
+                radius: root.conversationStarted ? 24 : 30
+                color: "#171717"
                 border.width: 1
-                border.color: "#545454"
+                border.color: "#3d3d3d"
                 clip: true
 
                 Behavior on height {
@@ -1140,22 +1256,22 @@ Scope {
 
                     Item {
                         Layout.fillWidth: true
-                        Layout.preferredHeight: visible ? 58 : 0
+                        Layout.preferredHeight: visible ? 56 : 0
                         visible: root.conversationStarted
 
                         Rectangle {
-                            width: 36
-                            height: 36
-                            anchors { left: parent.left; verticalCenter: parent.verticalCenter; leftMargin: 16 }
-                            radius: 18
-                            color: closeMouse.containsMouse ? "#272727" : "transparent"
+                            width: 34
+                            height: 34
+                            anchors { left: parent.left; verticalCenter: parent.verticalCenter; leftMargin: 20 }
+                            radius: 17
+                            color: closeMouse.containsMouse ? "#292929" : "transparent"
 
                             Text {
                                 anchors.centerIn: parent
                                 text: "×"
-                                color: "#8d8d8d"
+                                color: "#969696"
                                 font.family: Theme.fontFamily
-                                font.pixelSize: 25
+                                font.pixelSize: 23
                                 font.weight: Font.Light
                             }
                             MouseArea {
@@ -1168,13 +1284,13 @@ Scope {
 
                         Text {
                             anchors.centerIn: parent
-                            width: parent.width - 128
+                            width: parent.width - 144
                             text: root.currentTitle
-                            color: "#f1f1f1"
+                            color: "#f2f2f2"
                             elide: Text.ElideRight
                             horizontalAlignment: Text.AlignHCenter
                             font.family: Theme.fontFamily
-                            font.pixelSize: 15
+                            font.pixelSize: 14
                             font.weight: Font.DemiBold
                         }
                     }
@@ -1184,13 +1300,13 @@ Scope {
                         Layout.fillWidth: true
                         Layout.fillHeight: visible
                         Layout.preferredHeight: visible ? -1 : 0
-                        Layout.leftMargin: 16
-                        Layout.rightMargin: 16
-                        Layout.topMargin: 16
-                        Layout.bottomMargin: 16
+                        Layout.leftMargin: 28
+                        Layout.rightMargin: 28
+                        Layout.topMargin: 12
+                        Layout.bottomMargin: 24
                         visible: root.conversationStarted
                         model: root.messages
-                        spacing: 18
+                        spacing: 24
                         clip: true
                         boundsBehavior: Flickable.StopAtBounds
                         property bool followNewest: true
@@ -1207,12 +1323,12 @@ Scope {
                             required property string body
                             required property string messageStatus
                             required property string errorText
-                            required property var attachmentPaths
-                            readonly property int attachmentCount: attachmentPaths
-                                && attachmentPaths.count !== undefined
-                                    ? attachmentPaths.count
-                                    : attachmentPaths && attachmentPaths.length
-                                        ? attachmentPaths.length : 0
+                            required property var attachments
+                            readonly property int attachmentCount: attachments
+                                && attachments.count !== undefined
+                                    ? attachments.count
+                                    : attachments && attachments.length
+                                        ? attachments.length : 0
                             width: ListView.view.width
                             implicitHeight: messageBubble.implicitHeight
 
@@ -1220,41 +1336,81 @@ Scope {
                                 id: messageMetrics
                                 text: body
                                 font.family: Theme.fontFamily
-                                font.pixelSize: 14
+                                font.pixelSize: 15
                             }
 
                             Rectangle {
                                 id: messageBubble
                                 width: role === "user"
-                                    ? Math.min(parent.width * 0.82,
+                                    ? Math.min(parent.width * 0.78,
                                         Math.max(attachmentCount > 0 ? 320 : 88,
-                                            messageMetrics.advanceWidth + 36))
+                                            messageMetrics.advanceWidth + 40))
                                     : parent.width
-                                implicitHeight: messageContent.implicitHeight + 24
+                                implicitHeight: messageContent.implicitHeight
+                                    + (role === "user" ? 28 : 0)
                                 anchors.right: role === "user" ? parent.right : undefined
-                                radius: role === "user" ? 20 : 0
-                                color: role === "user" ? "#2b2b2b" : "transparent"
+                                radius: role === "user" ? 18 : 0
+                                color: role === "user" ? "#2a2a2a" : "transparent"
 
                                 ColumnLayout {
                                     id: messageContent
-                                    anchors { fill: parent; margins: 12 }
-                                    spacing: 9
+                                    anchors {
+                                        fill: parent
+                                        margins: role === "user" ? 14 : 0
+                                    }
+                                    spacing: 10
 
                                     Repeater {
-                                        model: attachmentPaths
+                                        model: attachments
                                         Rectangle {
                                             required property string hostPath
-                                            Layout.preferredWidth: Math.min(300, messageBubble.width - 24)
-                                            Layout.preferredHeight: 150
+                                            required property string attachmentKind
+                                            required property string displayName
+                                            Layout.preferredWidth: Math.min(300,
+                                                messageBubble.width - 24)
+                                            Layout.preferredHeight: attachmentKind === "image"
+                                                ? 150 : 48
                                             radius: 12
                                             color: "#202020"
                                             clip: true
 
                                             Image {
                                                 anchors.fill: parent
-                                                source: "file://" + hostPath
+                                                visible: attachmentKind === "image"
+                                                source: visible ? "file://" + hostPath : ""
                                                 fillMode: Image.PreserveAspectFit
                                                 asynchronous: true
+                                            }
+
+                                            RowLayout {
+                                                anchors { fill: parent; margins: 10 }
+                                                visible: attachmentKind === "text"
+                                                spacing: 10
+
+                                                Rectangle {
+                                                    Layout.preferredWidth: 28
+                                                    Layout.preferredHeight: 28
+                                                    radius: 7
+                                                    color: "#343434"
+
+                                                    Text {
+                                                        anchors.centerIn: parent
+                                                        text: "TXT"
+                                                        color: "#cfcfcf"
+                                                        font.family: Theme.fontFamily
+                                                        font.pixelSize: 8
+                                                        font.weight: Font.DemiBold
+                                                    }
+                                                }
+
+                                                Text {
+                                                    Layout.fillWidth: true
+                                                    text: displayName
+                                                    color: "#dedede"
+                                                    elide: Text.ElideMiddle
+                                                    font.family: Theme.fontFamily
+                                                    font.pixelSize: 11
+                                                }
                                             }
                                         }
                                     }
@@ -1270,7 +1426,7 @@ Scope {
                                         wrapMode: Text.Wrap
                                         color: role === "notice" ? "#b4b4b4" : "#eeeeee"
                                         font.family: Theme.fontFamily
-                                        font.pixelSize: 14
+                                        font.pixelSize: 15
                                         readOnly: true
                                         selectByMouse: role === "assistant"
                                     }
@@ -1295,7 +1451,7 @@ Scope {
                     Item {
                         Layout.fillWidth: true
                         Layout.preferredHeight: composerStack.implicitHeight
-                            + (root.conversationStarted ? 16 : 4)
+                            + (root.conversationStarted ? 20 : 4)
 
                         ColumnLayout {
                             id: composerStack
@@ -1303,29 +1459,31 @@ Scope {
                                 left: parent.left
                                 right: parent.right
                                 bottom: parent.bottom
-                                leftMargin: root.conversationStarted ? 16 : 4
-                                rightMargin: root.conversationStarted ? 16 : 4
-                                bottomMargin: root.conversationStarted ? 16 : 4
+                                leftMargin: root.conversationStarted ? 20 : 0
+                                rightMargin: root.conversationStarted ? 20 : 0
+                                bottomMargin: root.conversationStarted ? 20 : 4
                             }
-                            spacing: 8
+                            spacing: 10
 
                             Rectangle {
                                 id: commandPalette
+                                readonly property string draft: root.commandDraft(composer.text)
+
                                 Layout.fillWidth: true
                                 Layout.preferredHeight: visible
-                                    ? Math.min(224, commandList.contentHeight + 10) : 0
-                                visible: composer.text.trim().charAt(0) === "/"
-                                    && root.commandItems(composer.text).length > 0
-                                radius: 18
-                                color: "#222222"
+                                    ? Math.min(288, commandList.contentHeight + 12) : 0
+                                visible: draft.length > 0
+                                    && root.commandItems(draft).length > 0
+                                radius: 29
+                                color: "#242424"
                                 border.width: 1
-                                border.color: "#404040"
+                                border.color: "#3c3c3c"
                                 clip: true
 
                                 ListView {
                                     id: commandList
-                                    anchors { fill: parent; margins: 5 }
-                                    model: root.commandItems(composer.text)
+                                    anchors { fill: parent; margins: 6 }
+                                    model: root.commandItems(commandPalette.draft)
                                     currentIndex: 0
                                     clip: true
                                     boundsBehavior: Flickable.StopAtBounds
@@ -1334,14 +1492,14 @@ Scope {
                                         required property var modelData
                                         required property int index
                                         width: ListView.view.width
-                                        height: 44
-                                        radius: 13
+                                        height: 46
+                                        radius: height / 2
                                         color: index === commandList.currentIndex
-                                            || commandMouse.containsMouse ? "#303030" : "transparent"
+                                            || commandMouse.containsMouse ? "#353535" : "transparent"
 
                                         RowLayout {
-                                            anchors { fill: parent; leftMargin: 13; rightMargin: 13 }
-                                            spacing: 12
+                                            anchors { fill: parent; leftMargin: 14; rightMargin: 14 }
+                                            spacing: 14
 
                                             Text {
                                                 text: modelData.label
@@ -1353,11 +1511,11 @@ Scope {
                                             Text {
                                                 Layout.fillWidth: true
                                                 text: modelData.detail
-                                                color: "#7f7f7f"
+                                                color: "#8a8a8a"
                                                 elide: Text.ElideRight
                                                 horizontalAlignment: Text.AlignRight
                                                 font.family: Theme.fontFamily
-                                                font.pixelSize: 11
+                                                font.pixelSize: 12
                                             }
                                         }
 
@@ -1375,10 +1533,11 @@ Scope {
                             Rectangle {
                                 id: composerFrame
                                 Layout.fillWidth: true
-                                Layout.preferredHeight: composerInner.implicitHeight
-                                    + (root.conversationStarted ? 16 : 8)
-                                radius: root.conversationStarted ? 24 : 30
-                                color: root.conversationStarted ? "#282828" : "transparent"
+                                Layout.preferredHeight: composerInner.implicitHeight + 24
+                                radius: root.conversationStarted ? 22 : 28
+                                color: root.conversationStarted ? "#272727" : "transparent"
+                                border.width: root.conversationStarted ? 1 : 0
+                                border.color: "#343434"
 
                                 ColumnLayout {
                                     id: composerInner
@@ -1386,9 +1545,11 @@ Scope {
                                         left: parent.left
                                         right: parent.right
                                         top: parent.top
-                                        margins: root.conversationStarted ? 8 : 4
+                                        leftMargin: root.conversationStarted ? 12 : 20
+                                        rightMargin: root.conversationStarted ? 12 : 20
+                                        topMargin: 12
                                     }
-                                    spacing: 2
+                                    spacing: 8
 
                                     RowLayout {
                                         Layout.fillWidth: true
@@ -1399,18 +1560,61 @@ Scope {
                                             model: root.pendingAttachments
                                             Rectangle {
                                                 required property string hostPath
+                                                required property string attachmentKind
+                                                required property string displayName
                                                 required property int index
-                                                Layout.preferredWidth: 112
-                                                Layout.preferredHeight: 72
-                                                radius: 12
+                                                Layout.preferredWidth: attachmentKind === "image"
+                                                    ? 108 : 220
+                                                Layout.preferredHeight: attachmentKind === "image"
+                                                    ? 68 : 48
+                                                radius: 10
                                                 color: "#1c1c1c"
                                                 clip: true
 
                                                 Image {
                                                     anchors { fill: parent; margins: 3 }
-                                                    source: "file://" + hostPath
+                                                    visible: attachmentKind === "image"
+                                                    source: visible ? "file://" + hostPath : ""
                                                     fillMode: Image.PreserveAspectFit
                                                 }
+
+                                                RowLayout {
+                                                    anchors {
+                                                        fill: parent
+                                                        leftMargin: 10
+                                                        rightMargin: 38
+                                                        topMargin: 8
+                                                        bottomMargin: 8
+                                                    }
+                                                    visible: attachmentKind === "text"
+                                                    spacing: 9
+
+                                                    Rectangle {
+                                                        Layout.preferredWidth: 28
+                                                        Layout.preferredHeight: 28
+                                                        radius: 7
+                                                        color: "#343434"
+
+                                                        Text {
+                                                            anchors.centerIn: parent
+                                                            text: "TXT"
+                                                            color: "#cfcfcf"
+                                                            font.family: Theme.fontFamily
+                                                            font.pixelSize: 8
+                                                            font.weight: Font.DemiBold
+                                                        }
+                                                    }
+
+                                                    Text {
+                                                        Layout.fillWidth: true
+                                                        text: displayName
+                                                        color: "#dedede"
+                                                        elide: Text.ElideMiddle
+                                                        font.family: Theme.fontFamily
+                                                        font.pixelSize: 11
+                                                    }
+                                                }
+
                                                 Rectangle {
                                                     width: 24
                                                     height: 24
@@ -1436,16 +1640,16 @@ Scope {
                                     Item {
                                         Layout.fillWidth: true
                                         Layout.preferredHeight: Math.max(
-                                            root.conversationStarted ? 64 : 72,
-                                            Math.min(132, composer.contentHeight + 28))
+                                            root.conversationStarted ? 72 : 88,
+                                            Math.min(144, composer.contentHeight + 32))
 
                                         Flickable {
                                             anchors {
                                                 fill: parent
-                                                leftMargin: root.conversationStarted ? 10 : 8
-                                                rightMargin: root.conversationStarted ? 10 : 8
-                                                topMargin: root.conversationStarted ? 10 : 12
-                                                bottomMargin: root.conversationStarted ? 8 : 10
+                                                leftMargin: 2
+                                                rightMargin: 2
+                                                topMargin: 4
+                                                bottomMargin: 4
                                             }
                                             contentWidth: width
                                             contentHeight: composer.contentHeight
@@ -1466,8 +1670,8 @@ Scope {
                                                 Text {
                                                     visible: composer.text.length === 0
                                                     text: root.conversationStarted
-                                                        ? "Work with Codex" : "Ask Codex anything locally"
-                                                    color: "#686868"
+                                                        ? "Message Codex" : "Ask Codex anything locally"
+                                                    color: "#707070"
                                                     font: composer.font
                                                 }
 
@@ -1504,22 +1708,40 @@ Scope {
 
                                     RowLayout {
                                         Layout.fillWidth: true
-                                        Layout.preferredHeight: 36
-                                        Layout.leftMargin: root.conversationStarted ? 8 : 5
+                                        Layout.preferredHeight: 40
+                                        Layout.leftMargin: 2
                                         Layout.rightMargin: 0
-                                        spacing: 9
+                                        spacing: 12
 
-                                        PlusButton {
-                                            enabled: !root.attachmentsBusy && !root.isGenerating
-                                            onClicked: attachmentDialog.open()
+                                        RowLayout {
+                                            visible: root.lastError.length === 0
+                                                && !root.attachmentsBusy
+                                            spacing: 7
+
+                                            Rectangle {
+                                                width: 7
+                                                height: 7
+                                                radius: 3.5
+                                                color: root.codexAuthorized
+                                                    ? Theme.green : "#666666"
+                                            }
+
+                                            Text {
+                                                text: root.codexAuthorized
+                                                    ? "Authorized via sbx" : root.statusText
+                                                color: root.codexAuthorized
+                                                    ? "#a8b8a4" : "#858585"
+                                                font.family: Theme.fontFamily
+                                                font.pixelSize: 11
+                                            }
                                         }
 
                                         Text {
-                                            Layout.fillWidth: true
+                                            Layout.fillWidth: visible
                                             visible: root.lastError.length > 0
                                                 || root.attachmentsBusy
                                             text: root.attachmentsBusy
-                                                ? "Adding image…"
+                                                ? "Adding file…"
                                                 : screenshot.state === "failed"
                                                     ? root.lastError
                                                         + (screenshot.failureStage === "copy"
@@ -1531,17 +1753,14 @@ Scope {
                                             maximumLineCount: 2
                                             elide: Text.ElideRight
                                             font.family: Theme.fontFamily
-                                            font.pixelSize: 10
+                                            font.pixelSize: 11
                                         }
 
-                                        Item {
-                                            Layout.fillWidth: root.lastError.length === 0
-                                                && !root.attachmentsBusy
-                                        }
+                                        Item { Layout.fillWidth: true }
 
                                         Text {
                                             text: root.modelStatusText()
-                                            color: "#d6d6d6"
+                                            color: "#d8d8d8"
                                             font.family: Theme.fontFamily
                                             font.pixelSize: 12
                                             font.weight: Font.Medium
@@ -1570,53 +1789,18 @@ Scope {
         }
     }
 
-    component PlusButton: Rectangle {
-        id: plusButton
-        signal clicked()
-
-        implicitWidth: 34
-        implicitHeight: 34
-        radius: 17
-        color: plusMouse.containsMouse ? "#363636" : "transparent"
-        opacity: enabled ? 1 : 0.38
-
-        Canvas {
-            anchors.fill: parent
-            onPaint: {
-                const context = getContext("2d");
-                context.clearRect(0, 0, width, height);
-                context.strokeStyle = "#ededed";
-                context.lineWidth = 1.8;
-                context.lineCap = "round";
-                context.beginPath();
-                context.moveTo(17, 8);
-                context.lineTo(17, 26);
-                context.moveTo(8, 17);
-                context.lineTo(26, 17);
-                context.stroke();
-            }
-        }
-
-        MouseArea {
-            id: plusMouse
-            anchors.fill: parent
-            hoverEnabled: true
-            enabled: plusButton.enabled
-            onClicked: plusButton.clicked()
-        }
-    }
 
     component ActionButton: Rectangle {
         id: actionButton
         property bool stopMode: false
         signal clicked()
 
-        implicitWidth: 32
-        implicitHeight: 32
-        radius: 16
+        implicitWidth: 36
+        implicitHeight: 36
+        radius: 18
         color: stopMode ? "#f4f4f4"
-            : actionMouse.containsMouse && enabled ? "#bdbdbd" : "#9a9a9a"
-        opacity: enabled ? 1 : 0.42
+            : actionMouse.containsMouse && enabled ? "#dedede" : "#a8a8a8"
+        opacity: enabled ? 1 : 0.38
 
         Canvas {
             anchors.fill: parent
@@ -1629,11 +1813,11 @@ Scope {
                 context.lineCap = "round";
                 context.lineJoin = "round";
                 context.beginPath();
-                context.moveTo(10, 16);
-                context.lineTo(16, 10);
-                context.lineTo(22, 16);
-                context.moveTo(16, 10);
-                context.lineTo(16, 23);
+                context.moveTo(11, 18);
+                context.lineTo(18, 11);
+                context.lineTo(25, 18);
+                context.moveTo(18, 11);
+                context.lineTo(18, 25);
                 context.stroke();
             }
         }

@@ -16,13 +16,17 @@ Scope {
     property bool captureAfterCleanup: false
     property var pendingImport: null
     property string sourceKind: ""
+    property string attachmentKind: ""
+    property string displayName: ""
     readonly property string runtimeDirectory: {
         const runtimeRoot = Quickshell.env("XDG_RUNTIME_DIR");
         return runtimeRoot.length > 0 ? runtimeRoot + "/quickshell-ai" : "";
     }
 
-    signal captured(string token, string hostPath, string sandboxPath)
-    signal ready(string token, string hostPath, string sandboxPath)
+    signal captured(string token, string hostPath, string sandboxPath,
+        string attachmentKind, string displayName)
+    signal ready(string token, string hostPath, string sandboxPath,
+        string attachmentKind, string displayName)
     signal cancelled()
     signal failed(string message)
 
@@ -35,7 +39,7 @@ Scope {
             return "";
         }
         const filename = path.slice(prefix.length);
-        return /^(capture-[A-Za-z0-9]{12}\.png|attachment-[A-Za-z0-9]{12}\.(png|jpe?g|webp))$/
+        return /^(capture-[A-Za-z0-9]{12}\.png|attachment-[A-Za-z0-9]{12}\.(png|jpe?g|webp|txt))$/
             .test(filename) ? filename : "";
     }
 
@@ -46,7 +50,7 @@ Scope {
 
     function managedImportedFilename(path) {
         const filename = managedHostFilename(path);
-        return /^attachment-[A-Za-z0-9]{12}\.(png|jpe?g|webp)$/.test(filename)
+        return /^attachment-[A-Za-z0-9]{12}\.(png|jpe?g|webp|txt)$/.test(filename)
             ? filename : "";
     }
 
@@ -56,7 +60,7 @@ Scope {
             return "";
         }
         const filename = path.slice(prefix.length);
-        return /^(capture-[A-Za-z0-9]{12}\.png|attachment-[A-Za-z0-9]{12}\.(png|jpe?g|webp))$/
+        return /^(capture-[A-Za-z0-9]{12}\.png|attachment-[A-Za-z0-9]{12}\.(png|jpe?g|webp|txt))$/
             .test(filename) ? filename : "";
     }
 
@@ -66,6 +70,8 @@ Scope {
         sandboxPath = "";
         failureStage = "";
         sourceKind = "";
+        attachmentKind = "";
+        displayName = "";
     }
 
     function capture() {
@@ -85,12 +91,12 @@ Scope {
         });
     }
 
-    function importFile(path) {
-        queueImport({ mode: "file", path: String(path || "") });
+    function pickFile() {
+        queueImport({ mode: "picker" });
     }
 
     function pasteClipboardImage() {
-        queueImport({ mode: "clipboard", path: "" });
+        queueImport({ mode: "clipboard" });
     }
 
     function queueImport(request) {
@@ -111,11 +117,8 @@ Scope {
         lastError = "";
         state = "importing";
         const command = [
-            "bash", Quickshell.shellPath("AiAttachImage.sh"), request.mode
+            "bash", Quickshell.shellPath("AiAttachFile.sh"), request.mode
         ];
-        if (request.mode === "file") {
-            command.push(request.path);
-        }
         Quickshell.execDetached({ command: command });
     }
 
@@ -138,41 +141,49 @@ Scope {
             return;
         }
         sourceKind = "screenshot";
+        attachmentKind = "image";
+        displayName = "Screenshot";
         hostPath = path;
         token = filename.slice(0, filename.lastIndexOf("."));
         sandboxPath = AiConfig.sandboxAttachmentDirectory + "/" + filename;
         state = "validating";
         validateCapture.command = [
-            "file", "--brief", "--mime-type", "--no-dereference", "--", hostPath
+            "file", "--brief", "--mime", "--no-dereference", "--", hostPath
         ];
         validateCapture.running = true;
     }
 
-    function acceptImportedImage(path) {
+    function acceptImportedFile(path, kind, name) {
         if (state !== "importing") {
             removeHostFile(path);
             return;
         }
         const filename = managedImportedFilename(path);
-        if (filename.length === 0) {
-            fail("Attachment helper returned an invalid image path.", "attachment");
+        const normalizedKind = kind === "text" ? "text" : "image";
+        const kindMatchesPath = normalizedKind === "text"
+            ? filename.endsWith(".txt") : !filename.endsWith(".txt");
+        if (filename.length === 0 || !kindMatchesPath) {
+            fail("Attachment helper returned invalid file metadata.", "attachment");
             return;
         }
+        attachmentKind = normalizedKind;
+        displayName = String(name || (normalizedKind === "text" ? "Text file" : "Image"))
+            .replace(/[\r\n\t]/g, " ").slice(0, 120);
         hostPath = path;
         token = filename.slice(0, filename.lastIndexOf("."));
         sandboxPath = AiConfig.sandboxAttachmentDirectory + "/" + filename;
         state = "validating";
         validateCapture.command = [
-            "file", "--brief", "--mime-type", "--no-dereference", "--", hostPath
+            "file", "--brief", "--mime", "--no-dereference", "--", hostPath
         ];
         validateCapture.running = true;
     }
 
     function beginCopy() {
         state = "copying";
-        captured(token, hostPath, sandboxPath);
+        captured(token, hostPath, sandboxPath, attachmentKind, displayName);
         prepareSandbox.command = [
-            "sbx", "exec", sandboxName,
+            AiConfig.sbxExecutable, "exec", sandboxName,
             "mkdir", "-p", "-m", "700", AiConfig.sandboxAttachmentDirectory
         ];
         prepareSandbox.running = true;
@@ -248,7 +259,9 @@ Scope {
             return;
         }
         Quickshell.execDetached({
-            command: ["sbx", "exec", root.sandboxName, "rm", "-f", "--", path]
+            command: [
+                AiConfig.sbxExecutable, "exec", root.sandboxName, "rm", "-f", "--", path
+            ]
         });
     }
 
@@ -257,11 +270,18 @@ Scope {
         stdout: StdioCollector { id: validatedCaptureOutput }
         stderr: StdioCollector {}
         onExited: function(exitCode) {
-            const mimeType = validatedCaptureOutput.text.trim();
-            const supported = mimeType === "image/png" || mimeType === "image/jpeg"
+            const mime = validatedCaptureOutput.text.trim();
+            const mimeType = mime.split(";")[0].trim();
+            const charsetMatch = mime.match(/charset=([^;\s]+)/);
+            const encoding = charsetMatch ? charsetMatch[1] : "";
+            const supportedImage = mimeType === "image/png" || mimeType === "image/jpeg"
                 || mimeType === "image/webp";
+            const supportedText = mimeType === "application/x-empty"
+                || (encoding.length > 0 && encoding !== "binary");
+            const supported = root.attachmentKind === "image"
+                ? supportedImage : root.attachmentKind === "text" && supportedText;
             if (exitCode !== 0 || !supported) {
-                root.fail("The selected attachment is not a supported image.",
+                root.fail("The selected attachment is not a supported image or text file.",
                     root.sourceKind === "screenshot" ? "capture" : "attachment");
                 return;
             }
@@ -280,7 +300,7 @@ Scope {
                 return;
             }
             copyToSandbox.command = [
-                "sbx", "cp", root.hostPath,
+                AiConfig.sbxExecutable, "cp", root.hostPath,
                 root.sandboxName + ":" + root.sandboxPath
             ];
             copyToSandbox.running = true;
@@ -298,7 +318,8 @@ Scope {
             }
             root.state = "ready";
             root.failureStage = "";
-            root.ready(root.token, root.hostPath, root.sandboxPath);
+            root.ready(root.token, root.hostPath, root.sandboxPath,
+                root.attachmentKind, root.displayName);
         }
     }
 
@@ -328,7 +349,8 @@ Scope {
             "-name", "attachment-????????????.png", "-o",
             "-name", "attachment-????????????.jpg", "-o",
             "-name", "attachment-????????????.jpeg", "-o",
-            "-name", "attachment-????????????.webp", ")", "-delete"
+            "-name", "attachment-????????????.webp", "-o",
+            "-name", "attachment-????????????.txt", ")", "-delete"
         ];
         cleanupAbandonedHostFiles.running = true;
     }

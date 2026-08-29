@@ -26,21 +26,39 @@ fi
 
 attachment_directory="$runtime_root/quickshell-ai"
 umask 077
-if ! mkdir -p -m 700 "$attachment_directory" || ! chmod 700 "$attachment_directory"; then
+if ! mkdir -p "$attachment_directory" || ! chmod 700 "$attachment_directory"; then
   report_failure 'Could not create the private attachment directory'
   exit 1
 fi
 
 source_path=""
 clipboard_type=""
+attachment_kind="image"
+display_name="Pasted image"
+mime_encoding="binary"
+
 case "$mode" in
-  file)
-    if [[ $# -ne 2 || -z "$2" || ! -f "$2" || -L "$2" ]]; then
+  picker)
+    if ! command -v zenity >/dev/null 2>&1; then
+      report_failure 'zenity is unavailable; install the zenity package'
+      exit 1
+    fi
+    if ! source_path="$(zenity --file-selection --title='Attach a file' \
+        --file-filter='Images and text files | *')"; then
+      report_cancelled
+      exit 0
+    fi
+    if [[ -z "$source_path" || ! -f "$source_path" || -L "$source_path" ]]; then
       report_failure 'The selected attachment is not a regular file'
       exit 1
     fi
-    source_path="$2"
+    display_name="${source_path##*/}"
+    display_name="${display_name//$'\n'/ }"
+    display_name="${display_name//$'\r'/ }"
+    display_name="${display_name//$'\t'/ }"
+    display_name="${display_name:0:120}"
     mime_type="$(file --brief --mime-type --no-dereference -- "$source_path")"
+    mime_encoding="$(file --brief --mime-encoding --no-dereference -- "$source_path")"
     ;;
   clipboard)
     if ! command -v wl-paste >/dev/null 2>&1; then
@@ -76,8 +94,12 @@ case "$mime_type" in
   image/jpeg) extension='jpg' ;;
   image/webp) extension='webp' ;;
   *)
-    report_failure 'Only PNG, JPEG, and WebP images can be attached'
-    exit 1
+    if [[ "$mime_type" != 'application/x-empty' && "$mime_encoding" == 'binary' ]]; then
+      report_failure 'Only PNG, JPEG, WebP, and text files can be attached'
+      exit 1
+    fi
+    attachment_kind='text'
+    extension='txt'
     ;;
 esac
 
@@ -86,10 +108,10 @@ if ! attachment_path="$(mktemp --tmpdir="$attachment_directory" "attachment-XXXX
   exit 1
 fi
 
-if [[ "$mode" == 'file' ]]; then
+if [[ "$mode" == 'picker' ]]; then
   if ! cp --reflink=auto -- "$source_path" "$attachment_path"; then
     rm -f -- "$attachment_path"
-    report_failure 'Could not copy the selected image'
+    report_failure 'Could not copy the selected file'
     exit 1
   fi
 elif ! wl-paste --type "$clipboard_type" >"$attachment_path"; then
@@ -99,13 +121,17 @@ elif ! wl-paste --type "$clipboard_type" >"$attachment_path"; then
 fi
 
 actual_mime="$(file --brief --mime-type --no-dereference -- "$attachment_path")"
-if [[ "$actual_mime" != "$mime_type" ]]; then
+actual_encoding="$(file --brief --mime-encoding --no-dereference -- "$attachment_path")"
+if [[ "$attachment_kind" == 'image' && "$actual_mime" != "$mime_type" ]] \
+    || [[ "$attachment_kind" == 'text' && "$actual_mime" != 'application/x-empty' \
+      && "$actual_encoding" == 'binary' ]]; then
   rm -f -- "$attachment_path"
-  report_failure 'The attachment image format could not be verified'
+  report_failure 'The attachment format could not be verified'
   exit 1
 fi
 
-if ! qs -c main ipc call ai attachImportedImage "$attachment_path" >/dev/null 2>&1; then
+if ! qs -c main ipc call ai attachImportedFile \
+    "$attachment_path" "$attachment_kind" "$display_name" >/dev/null 2>&1; then
   rm -f -- "$attachment_path"
   exit 1
 fi

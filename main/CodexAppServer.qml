@@ -102,7 +102,8 @@ Scope {
     Process {
         id: process
 
-        command: ["sbx", "exec", "-i", root.sandboxName, "codex", "app-server"]
+        command: [AiConfig.sbxExecutable, "exec", "-i",
+            root.sandboxName, "codex", "app-server"]
         stdinEnabled: true
 
         stdout: SplitParser {

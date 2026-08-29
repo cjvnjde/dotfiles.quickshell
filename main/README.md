@@ -42,36 +42,38 @@ The picker can also be controlled through
 Press `Super+A` to open a compact AI chat overlay, or `Super+Shift+A` to select
 a screen region and attach its untouched PNG to a new prompt. The interface is
 a minimal dark composer that expands into the current conversation. Its footer
-shows a screenshot-style plus control, the active Codex model and thinking
-level, and a compact circular send button that becomes a stop button while a
-response is streaming. The plus control opens an image picker for PNG, JPEG,
-and WebP files. Pasting while the composer is focused also attaches a clipboard
-image without interfering with normal text paste.
+shows the `sbx` authorization state, active Codex model and thinking level, and
+a compact circular send button that becomes a stop button while a response is
+streaming. Pasting while the composer is focused attaches a clipboard image
+without interfering with normal text paste.
 
-Type `/` in the composer to open the command palette. `/ps` captures a screen
+Type `/` at the start of the composer or after existing draft text to open the
+command palette. Selecting an inline command removes only that command fragment
+and preserves the rest of the draft. `/file` hides the chat and opens a
+foreground picker for PNG, JPEG, WebP, and text files. `/ps` captures a screen
 region, `/model` changes the active model, `/thinking` changes reasoning effort,
-`/new` starts a clean chat, and `/reconnect` restarts a failed connection.
-Model and thinking choices come from app-server's `model/list` response and are
-applied to subsequent turns. `Enter` executes a complete command immediately,
-accepts a highlighted partial command, or sends a message. `Shift+Enter`
-inserts a newline, and `Escape` hides the overlay without stopping an active
-response. The current in-memory conversation is preserved while the overlay is
-hidden.
+`/new` starts a clean chat, and `/reconnect` restarts the backend. Model and
+thinking choices come from app-server's `model/list` response and are applied
+to subsequent turns. `Enter` executes a complete command immediately, accepts
+a highlighted partial command, or sends a message. `Shift+Enter` inserts a
+newline, and `Escape` hides the overlay without stopping an active response.
+The current in-memory conversation is preserved while the overlay is hidden.
 
 The feature owns one dedicated sandbox named `quickshell-ai-chat`, configured
 in [`AiConfig.qml`](AiConfig.qml). It creates that sandbox with `sbx create
 codex` and an otherwise empty private workspace below Quickshell's state
-directory. It never attaches the user's home or a project. New Chat removes
-and recreates only this dedicated sandbox, clearing its Codex history. The
-global host-side OAuth secret is injected when the new sandbox is created.
-Authenticate on the host with:
+directory. It never attaches the user's home or a project. New Chat deletes the
+previous Codex thread through app-server while keeping the sandbox and
+app-server connection alive, so the next message can start immediately.
+Credentials remain managed by Docker Sandboxes and are not copied into the
+Quickshell process or private workspace. Confirm Codex access with:
 
 ```sh
-sbx secret set openai --oauth
+sbx run codex
 ```
 
 The host needs the official Arch packages `quickshell`, `grim`, `slurp`,
-`wl-clipboard`, and `file`, plus Docker Sandboxes (`sbx`). No API key is used.
+`wl-clipboard`, `file`, and `zenity`, plus Docker Sandboxes (`sbx`).
 Check the selected sandbox and installed protocol before starting Quickshell:
 
 ```sh
@@ -94,8 +96,8 @@ qs -c main ipc call ai newChat
 ```
 
 Set `QUICKSHELL_AI_DEBUG=1` to log sanitized lifecycle diagnostics. Prompt
-text, response bodies, image bytes, credentials, and complete account objects
-are never logged.
+text, response bodies, attachment contents, credentials, and complete account
+objects are never logged.
 
 Codex remains a coding agent and may run read-only commands inside its Docker
 sandbox. The client requests `approvalPolicy: never` and a read-only sandbox
@@ -107,16 +109,19 @@ The Docker sandbox is the host security boundary. This feature mounts only its
 dedicated, mode-`0700` empty workspace below Quickshell's state directory; that
 workspace is reset before sandbox creation. It does not mount the user's home
 or a project. The only other host content transferred is a screenshot,
-clipboard image, or filesystem image explicitly selected by the user.
+clipboard image, or filesystem image or text file explicitly selected by the
+user.
 
 Screenshot callbacks accept only helper-style PNG names. Clipboard and picker
-imports are copied first to private helper-style attachment names. Both paths
-must be regular PNG, JPEG, or WebP files directly inside the private runtime
-directory before Quickshell copies them to `/tmp/quickshell-ai` in the sandbox.
-The original picker file is never modified or removed. Sandbox copies are
-removed after turn completion. Managed host copies remain only while displayed,
-are removed by New Chat, and abandoned copies are removed on the next
-Quickshell start.
+imports are copied first to private helper-style attachment names. Imported
+files must be regular PNG, JPEG, WebP, or text files directly inside the
+private runtime directory before Quickshell copies them to
+`/tmp/quickshell-ai` in the sandbox. Text attachments receive a controlled
+`.txt` sandbox name and are presented to Codex by that sandbox path. The
+original picker file is never modified or removed. Sandbox copies are removed
+after turn completion. Managed host copies remain only while displayed, are
+removed by New Chat, and abandoned copies are removed on the next Quickshell
+start.
 
 OAuth uses Docker's credential proxy; the raw subscription token remains
 host-side. The app-server necessarily communicates with the Codex service, so
