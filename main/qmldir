@@ -15,3 +15,8 @@ MediaControl 1.0 MediaControl.qml
 PrivacyIndicators 1.0 PrivacyIndicators.qml
 AppLauncher 1.0 AppLauncher.qml
 AiChat 1.0 AiChat.qml
+AiChatView 1.0 AiChatView.qml
+AiChatMessage 1.0 AiChatMessage.qml
+AiChatComposer 1.0 AiChatComposer.qml
+AiChatActionButton 1.0 AiChatActionButton.qml
+AiChatAttachment 1.0 AiChatAttachment.qml

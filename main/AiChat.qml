@@ -1,9 +1,7 @@
 import QtQuick
-import QtQuick.Layouts
 import Quickshell
-import Quickshell.Hyprland
 import Quickshell.Io
-import Quickshell.Wayland
+import "AiChatLogic.js" as AiChatLogic
 
 Scope {
     id: root
@@ -58,6 +56,8 @@ Scope {
         || screenshot.state === "validating"
         || screenshot.state === "capturing"
         || screenshot.state === "copying"
+    readonly property string attachmentState: screenshot.state
+    readonly property string attachmentFailureStage: screenshot.failureStage
 
     signal submissionAccepted()
     signal focusComposer()
@@ -102,35 +102,8 @@ Scope {
         return "Disconnected";
     }
 
-    function titleCase(value) {
-        const text = String(value || "");
-        return text.length === 0 ? "" : text.charAt(0).toUpperCase() + text.slice(1);
-    }
-
-    function conciseModelName(value) {
-        const name = String(value || "Codex").replace(/^GPT-/i, "");
-        return name.replace(/-/g, " ");
-    }
-
-    function modelStatusText() {
-        const effort = selectedEffort === "" || selectedEffort === "default"
-            ? "Auto" : titleCase(selectedEffort);
-        return conciseModelName(selectedModelName) + " " + effort;
-    }
-
-    function modelById(modelId) {
-        const requested = String(modelId || "").toLowerCase();
-        for (const model of availableModels) {
-            if (String(model.id).toLowerCase() === requested
-                    || String(model.displayName).toLowerCase() === requested) {
-                return model;
-            }
-        }
-        return null;
-    }
-
     function chooseModel(modelId) {
-        const model = modelById(modelId);
+        const model = AiChatLogic.modelById(availableModels, modelId);
         if (model === null) {
             lastError = "Unknown model. Type /model to see available models.";
             return false;
@@ -157,41 +130,12 @@ Scope {
     }
 
     function updateModels(payload) {
-        const source = payload && Array.isArray(payload.data) ? payload.data : [];
-        const models = [];
-        for (const entry of source) {
-            if (!entry || entry.hidden === true) {
-                continue;
-            }
-            const effortEntries = Array.isArray(entry.supportedReasoningEfforts)
-                ? entry.supportedReasoningEfforts : [];
-            const efforts = [];
-            for (const effortEntry of effortEntries) {
-                const effort = typeof effortEntry === "string"
-                    ? effortEntry
-                    : String(effortEntry.reasoningEffort || effortEntry.effort || "");
-                if (effort.length > 0 && efforts.indexOf(effort) < 0) {
-                    efforts.push(effort);
-                }
-            }
-            const id = String(entry.id || entry.model || "");
-            if (id.length === 0) {
-                continue;
-            }
-            models.push({
-                id: id,
-                displayName: String(entry.displayName || entry.name || id),
-                defaultEffort: String(entry.defaultReasoningEffort
-                    || (efforts.length > 0 ? efforts[0] : "default")),
-                efforts: efforts.length > 0 ? efforts : ["default"],
-                isDefault: entry.isDefault === true
-            });
-        }
+        const models = AiChatLogic.modelsFromPayload(payload);
         availableModels = models;
         if (models.length === 0) {
             return;
         }
-        let active = modelById(selectedModel);
+        let active = AiChatLogic.modelById(models, selectedModel);
         if (active === null) {
             active = models.find(model => model.isDefault) || models[0];
         }
@@ -208,84 +152,12 @@ Scope {
         return params;
     }
 
-    function commandDraft(draft) {
-        const text = String(draft || "");
-        for (let index = text.length - 1; index >= 0; index--) {
-            if (text.charAt(index) !== "/") {
-                continue;
-            }
-            if (index === 0 || /\s/.test(text.charAt(index - 1))) {
-                return text.slice(index);
-            }
-        }
-        return "";
-    }
-
-    function replaceCommandDraft(draft, replacement) {
-        const text = String(draft || "");
-        const command = commandDraft(text);
-        if (command.length === 0) {
-            return text;
-        }
-        return text.slice(0, text.length - command.length)
-            + String(replacement || "");
-    }
-
-    function removeCommandDraft(draft) {
-        return replaceCommandDraft(draft, "").replace(/\s+$/, "");
-    }
-
-    function commandItems(draft) {
-        const value = String(draft || "").replace(/^\s+/, "");
-        const lowered = value.toLowerCase();
-        if (lowered.indexOf("/model") === 0
-                && (lowered.length === 6 || lowered.charAt(6) === " ")) {
-            const query = lowered.slice(6).trim();
-            return availableModels.filter(model => query.length === 0
-                    || model.id.toLowerCase().indexOf(query) >= 0
-                    || model.displayName.toLowerCase().indexOf(query) >= 0)
-                .map(model => ({
-                    label: model.displayName,
-                    detail: model.id === selectedModel ? "Current model" : model.id,
-                    draft: "/model " + model.id,
-                    immediate: true
-                }));
-        }
-        if ((lowered.indexOf("/thinking") === 0
-                    && (lowered.length === 9 || lowered.charAt(9) === " "))
-                || (lowered.indexOf("/effort") === 0
-                    && (lowered.length === 7 || lowered.charAt(7) === " "))) {
-            const offset = lowered.indexOf("/thinking") === 0 ? 9 : 7;
-            const query = lowered.slice(offset).trim();
-            return supportedEfforts.filter(effort => query.length === 0
-                    || effort.indexOf(query) >= 0)
-                .map(effort => ({
-                    label: titleCase(effort),
-                    detail: effort === selectedEffort ? "Current thinking level" : "Thinking level",
-                    draft: "/thinking " + effort,
-                    immediate: true
-                }));
-        }
-
-        const commands = [
-            { label: "/file", detail: "Attach an image or text file", draft: "/file", immediate: true },
-            { label: "/ps", detail: "Capture a screen region", draft: "/ps", immediate: true },
-            { label: "/copy", detail: "Copy the entire chat", draft: "/copy", immediate: true },
-            { label: "/model", detail: "Change model", draft: "/model ", immediate: false },
-            { label: "/thinking", detail: "Change thinking level", draft: "/thinking ", immediate: false },
-            { label: "/new", detail: "Start a new chat", draft: "/new", immediate: true },
-            { label: "/reconnect", detail: "Reload the chat kit and backend", draft: "/reconnect", immediate: true },
-            { label: "/update", detail: "Update Codex and reconnect", draft: "/update", immediate: true },
-            { label: "/rebuild", detail: "Recreate the sandbox and update Codex", draft: "/rebuild", immediate: true }
-        ];
-        return commands.filter(command => command.label.indexOf(lowered) === 0);
-    }
-
     function executeSlashCommand(value) {
         const text = String(value || "").trim();
         if (text.charAt(0) !== "/") {
             return false;
         }
+
         const pieces = text.split(/\s+/);
         const command = pieces[0].toLowerCase();
         const argument = pieces.slice(1).join(" ");
@@ -294,83 +166,47 @@ Scope {
                     && argument.length === 0) {
             return false;
         }
-        if (command === "/file") {
+
+        switch (command) {
+        case "/file":
             pickFile();
-        } else if (command === "/ps" || command === "/screenshot") {
+            break;
+        case "/ps":
+        case "/screenshot":
             captureRegion();
-        } else if (command === "/copy") {
+            break;
+        case "/copy":
             copyChat();
-        } else if (command === "/model") {
+            break;
+        case "/model":
             chooseModel(argument);
-        } else if (command === "/thinking" || command === "/effort") {
+            break;
+        case "/thinking":
+        case "/effort":
             chooseEffort(argument);
-        } else if (command === "/new") {
+            break;
+        case "/new":
             newChat();
-        } else if (command === "/reconnect") {
+            break;
+        case "/reconnect":
             reconnect();
-        } else if (command === "/update") {
+            break;
+        case "/update":
             requestCodexUpdate();
-        } else if (command === "/rebuild") {
+            break;
+        case "/rebuild":
             requestSandboxRebuild();
-        } else if (command === "/retry") {
+            break;
+        case "/retry":
             retryAttachment();
-        } else if (command === "/discard") {
+            break;
+        case "/discard":
             discardFailedAttachment();
-        } else {
+            break;
+        default:
             lastError = "Unknown command. Type / to see available commands.";
         }
         return true;
-    }
-
-    function safeAssistantMarkdown(value) {
-        return String(value)
-            .replace(/!\[/g, "\\![")
-            .replace(/</g, "&lt;");
-    }
-
-    function markdownBlocks(value) {
-        const lines = String(value || "").split("\n");
-        const blocks = [];
-        let kind = "markdown";
-        let language = "";
-        let buffer = [];
-
-        function flushBlock() {
-            const text = buffer.join("\n");
-            if (kind === "code" || text.length > 0) {
-                blocks.push({
-                    kind: kind,
-                    language: language,
-                    text: text
-                });
-            }
-            buffer = [];
-        }
-
-        for (const line of lines) {
-            if (kind === "markdown") {
-                const openingFence = line.match(/^[ \t]*```([^`]*)$/);
-                if (openingFence !== null) {
-                    flushBlock();
-                    kind = "code";
-                    language = openingFence[1].trim();
-                } else {
-                    buffer.push(line);
-                }
-            } else if (/^[ \t]*```[ \t]*$/.test(line)) {
-                flushBlock();
-                kind = "markdown";
-                language = "";
-            } else {
-                buffer.push(line);
-            }
-        }
-        flushBlock();
-
-        if (blocks.length === 0) {
-            blocks.push({ kind: "markdown", language: "", text: "" });
-        }
-        return blocks;
     }
 
     function copyText(value) {
@@ -417,164 +253,6 @@ Scope {
         lastError = "Only web and email links can be opened from AI answers.";
     }
 
-    function textFromBlocks(value) {
-        if (!Array.isArray(value)) {
-            return typeof value === "string" ? value : "";
-        }
-        const parts = [];
-        for (const entry of value) {
-            if (typeof entry === "string") {
-                parts.push(entry);
-            } else if (entry && entry.text !== undefined) {
-                parts.push(String(entry.text));
-            }
-        }
-        return parts.join("\n\n");
-    }
-
-    function prettyValue(value) {
-        if (value === undefined || value === null || value === "") {
-            return "";
-        }
-        if (typeof value === "string") {
-            return value;
-        }
-        try {
-            return JSON.stringify(value, null, 2);
-        } catch (error) {
-            return String(value);
-        }
-    }
-
-    function normalizedActivityStatus(value, fallback) {
-        const status = String(value || fallback || "streaming");
-        return status === "inProgress" ? "streaming" : status;
-    }
-
-    function activityStatusLabel(value) {
-        const status = normalizedActivityStatus(value, "");
-        if (status === "streaming") {
-            return "Running";
-        }
-        if (status === "completed") {
-            return "Done";
-        }
-        if (status === "failed") {
-            return "Failed";
-        }
-        if (status === "declined") {
-            return "Declined";
-        }
-        if (status === "interrupted") {
-            return "Stopped";
-        }
-        return titleCase(status);
-    }
-
-    function activityTitle(item) {
-        const type = String(item && item.type || "activity");
-        if (type === "turn" || type === "reasoning") {
-            return "Thinking";
-        }
-        if (type === "plan") {
-            return "Planning";
-        }
-        if (type === "commandExecution") {
-            return "Shell command";
-        }
-        if (type === "fileChange") {
-            return "Editing files";
-        }
-        if (type === "mcpToolCall") {
-            const context = item.appContext || {};
-            const owner = String(context.appName || item.server || "Tool");
-            const action = String(context.actionName || item.tool || "");
-            return action.length > 0 ? owner + ": " + action : owner;
-        }
-        if (type === "collabToolCall") {
-            return "Agent: " + String(item.tool || "collaboration");
-        }
-        if (type === "webSearch") {
-            return "Web search";
-        }
-        if (type === "imageGeneration") {
-            return "Generating image";
-        }
-        if (type === "imageView") {
-            return "Viewing image";
-        }
-        if (type === "sleep") {
-            return "Waiting";
-        }
-        if (type === "contextCompaction") {
-            return "Compacting conversation";
-        }
-        if (type === "enteredReviewMode") {
-            return "Reviewing";
-        }
-        if (type === "exitedReviewMode") {
-            return "Review complete";
-        }
-        if (type === "dynamicToolCall") {
-            return "Tool: " + String(item.tool || "call");
-        }
-        return titleCase(type.replace(/([a-z0-9])([A-Z])/g, "$1 $2"));
-    }
-
-    function activityBody(item) {
-        const type = String(item && item.type || "");
-        if (type === "reasoning") {
-            return textFromBlocks(item.summary) || textFromBlocks(item.content);
-        }
-        if (type === "plan") {
-            return String(item.text || "");
-        }
-        if (type === "commandExecution") {
-            const command = String(item.command || "");
-            return command.length > 0 ? "$ " + command : "";
-        }
-        if (type === "fileChange") {
-            const changes = Array.isArray(item.changes) ? item.changes : [];
-            return changes.map(change => {
-                const kind = String(change.kind || "change");
-                return titleCase(kind) + ": " + String(change.path || "");
-            }).join("\n");
-        }
-        if (type === "mcpToolCall" || type === "dynamicToolCall") {
-            return prettyValue(item.arguments);
-        }
-        if (type === "collabToolCall") {
-            return String(item.prompt || item.agentStatus || "");
-        }
-        if (type === "webSearch") {
-            return String(item.query || prettyValue(item.action));
-        }
-        if (type === "imageView") {
-            return String(item.path || "");
-        }
-        if (type === "imageGeneration") {
-            return String(item.revisedPrompt || "");
-        }
-        if (type === "sleep") {
-            const duration = Number(item.durationMs || 0);
-            return duration > 0 ? "Waiting " + (duration / 1000).toFixed(1) + " seconds" : "";
-        }
-        if (type === "enteredReviewMode" || type === "exitedReviewMode") {
-            return String(item.review || "");
-        }
-        return "";
-    }
-
-    function activityOutput(item) {
-        if (String(item && item.type || "") === "commandExecution") {
-            return String(item.aggregatedOutput || "");
-        }
-        if (String(item && item.type || "") === "mcpToolCall") {
-            return prettyValue(item.error || item.result);
-        }
-        return "";
-    }
-
     function findActivity(itemId) {
         const requested = String(itemId || "");
         for (let index = messageModel.count - 1; index >= 0; index--) {
@@ -606,20 +284,22 @@ Scope {
             return -1;
         }
         let index = findActivity(itemId);
-        const status = normalizedActivityStatus(item.status, fallbackStatus);
+        const status = AiChatLogic.normalizedActivityStatus(
+            item.status, fallbackStatus);
         if (index < 0) {
-            index = appendMessage("activity", activityBody(item), status,
+            index = appendMessage("activity", AiChatLogic.activityBody(item), status,
                 currentThreadId, currentTurnId, itemId, []);
         } else {
-            const body = activityBody(item);
+            const body = AiChatLogic.activityBody(item);
             if (body.length > 0 || messageModel.get(index).body.length === 0) {
                 messageModel.setProperty(index, "body", body);
             }
             messageModel.setProperty(index, "messageStatus", status);
         }
         messageModel.setProperty(index, "activityType", String(item.type || "activity"));
-        messageModel.setProperty(index, "activityTitle", activityTitle(item));
-        const output = activityOutput(item);
+        messageModel.setProperty(index, "activityTitle",
+            AiChatLogic.activityTitle(item));
+        const output = AiChatLogic.activityOutput(item);
         if (output.length > 0) {
             messageModel.setProperty(index, "activityOutput", output);
         }
@@ -637,12 +317,6 @@ Scope {
         const limit = 12000;
         messageModel.setProperty(index, role, next.length > limit
             ? "…\n" + next.slice(next.length - limit) : next);
-    }
-
-    function isActivityItem(item) {
-        const type = String(item && item.type || "");
-        return type.length > 0 && type !== "agentMessage"
-            && type !== "userMessage" && type !== "functionCallOutput";
     }
 
     function beginSandboxSetupStage(stage, timeoutMs) {
@@ -1308,7 +982,7 @@ Scope {
         }
         if (method === "item/started") {
             const item = params.item || {};
-            if (isActivityItem(item)) {
+            if (AiChatLogic.isActivityItem(item)) {
                 removeTurnPlaceholder();
                 appendActivity(item, "streaming");
             }
@@ -1358,7 +1032,7 @@ Scope {
                 }
                 messageModel.setProperty(index, "messageStatus", "completed");
                 messageModel.setProperty(index, "itemId", itemId);
-            } else if (isActivityItem(item)) {
+            } else if (AiChatLogic.isActivityItem(item)) {
                 removeTurnPlaceholder();
                 appendActivity(item, "completed");
             }
@@ -1810,1044 +1484,8 @@ Scope {
         }
     }
 
-    Variants {
-        model: Quickshell.screens
-
-        PanelWindow {
-            id: chatWindow
-
-            required property var modelData
-            readonly property var monitor: Hyprland.monitorFor(modelData)
-            readonly property bool focusedScreen: monitor !== null && monitor.focused
-
-            function completeMenuItem(item) {
-                composer.text = root.replaceCommandDraft(composer.text, item.draft);
-                composer.cursorPosition = composer.length;
-                composer.forceActiveFocus();
-            }
-
-            function acceptMenuItem(item) {
-                if (item.immediate) {
-                    composer.text = root.removeCommandDraft(composer.text);
-                    composer.cursorPosition = composer.length;
-                    root.executeSlashCommand(item.draft);
-                    return;
-                }
-
-                completeMenuItem(item);
-            }
-
-            function submitComposer() {
-                if (root.isGenerating) {
-                    root.stop();
-                    return;
-                }
-
-                const draft = composer.text.trim();
-                const activeCommand = root.commandDraft(composer.text);
-                if (activeCommand.length > 0) {
-                    const items = root.commandItems(activeCommand);
-                    for (const item of items) {
-                        if (item.immediate
-                                && item.draft.trim() === activeCommand.trim()) {
-                            acceptMenuItem(item);
-                            return;
-                        }
-                    }
-                    if (commandPalette.visible && items.length > 0) {
-                        acceptMenuItem(items[Math.max(0, commandList.currentIndex)]);
-                        return;
-                    }
-                    if (draft === activeCommand.trim()) {
-                        if (root.executeSlashCommand(activeCommand)) {
-                            composer.clear();
-                        }
-                        return;
-                    }
-                }
-                root.send(composer.text);
-            }
-
-
-            screen: modelData
-            visible: root.shown && (focusedScreen || Quickshell.screens.length === 1)
-            color: "transparent"
-            exclusiveZone: 0
-            aboveWindows: true
-
-            anchors { top: true; bottom: true; left: true; right: true }
-            WlrLayershell.layer: WlrLayer.Overlay
-            WlrLayershell.keyboardFocus: WlrKeyboardFocus.Exclusive
-
-            onVisibleChanged: {
-                if (visible) {
-                    Qt.callLater(() => composer.forceActiveFocus());
-                }
-            }
-
-            Shortcut {
-                sequence: "Escape"
-                onActivated: root.close()
-            }
-
-
-            Connections {
-                target: root
-                function onFocusComposer() {
-                    if (chatWindow.visible) {
-                        Qt.callLater(() => composer.forceActiveFocus());
-                    }
-                }
-            }
-
-            MouseArea {
-                anchors.fill: parent
-                onClicked: root.close()
-            }
-
-            Rectangle {
-                id: card
-
-                anchors.centerIn: parent
-                width: Math.min(AiConfig.chatWidth, parent.width - 48)
-                height: root.conversationStarted
-                    ? Math.min(AiConfig.chatMaxHeight, parent.height * 0.86)
-                    : Math.min(Math.max(164, composerStack.implicitHeight + 4),
-                        parent.height - 32)
-                radius: root.conversationStarted ? 24 : 30
-                color: "#171717"
-                border.width: 1
-                border.color: "#3d3d3d"
-                clip: true
-
-                Behavior on height {
-                    NumberAnimation { duration: 160; easing.type: Easing.OutCubic }
-                }
-
-                MouseArea {
-                    anchors.fill: parent
-                    onClicked: mouse => mouse.accepted = true
-                }
-
-                ColumnLayout {
-                    anchors.fill: parent
-                    spacing: 0
-
-                    Item {
-                        Layout.fillWidth: true
-                        Layout.preferredHeight: visible ? 56 : 0
-                        visible: root.conversationStarted
-
-                        Rectangle {
-                            width: 34
-                            height: 34
-                            anchors { left: parent.left; verticalCenter: parent.verticalCenter; leftMargin: 20 }
-                            radius: 17
-                            color: closeMouse.containsMouse ? "#292929" : "transparent"
-
-                            Text {
-                                anchors.centerIn: parent
-                                text: "×"
-                                color: "#969696"
-                                font.family: Theme.fontFamily
-                                font.pixelSize: 23
-                                font.weight: Font.Light
-                            }
-                            MouseArea {
-                                id: closeMouse
-                                anchors.fill: parent
-                                hoverEnabled: true
-                                onClicked: root.close()
-                            }
-                        }
-
-                        Text {
-                            anchors.centerIn: parent
-                            width: parent.width - 144
-                            text: root.currentTitle
-                            color: "#f2f2f2"
-                            elide: Text.ElideRight
-                            horizontalAlignment: Text.AlignHCenter
-                            font.family: Theme.fontFamily
-                            font.pixelSize: 14
-                            font.weight: Font.DemiBold
-                        }
-                    }
-
-                    ListView {
-                        id: messageList
-                        Layout.fillWidth: true
-                        Layout.fillHeight: visible
-                        Layout.preferredHeight: visible ? -1 : 0
-                        Layout.leftMargin: 28
-                        Layout.rightMargin: 28
-                        Layout.topMargin: 12
-                        Layout.bottomMargin: 24
-                        visible: root.conversationStarted
-                        model: root.messages
-                        spacing: 24
-                        clip: true
-                        boundsBehavior: Flickable.StopAtBounds
-                        property bool followNewest: true
-
-                        onContentHeightChanged: {
-                            if (followNewest) {
-                                Qt.callLater(() => positionViewAtEnd());
-                            }
-                        }
-                        onMovementEnded: followNewest = atYEnd
-
-                        delegate: Item {
-                            required property string role
-                            required property string body
-                            required property string messageStatus
-                            required property string errorText
-                            required property string itemId
-                            required property string activityType
-                            required property string activityTitle
-                            required property string activityOutput
-                            required property var attachments
-                            property bool activityExpanded: false
-                            property bool answerCopied: false
-                            readonly property int attachmentCount: attachments
-                                && attachments.count !== undefined
-                                    ? attachments.count
-                                    : attachments && attachments.length
-                                        ? attachments.length : 0
-                            width: ListView.view.width
-                            implicitHeight: messageBubble.implicitHeight
-
-                            TextMetrics {
-                                id: messageMetrics
-                                text: body
-                                font.family: Theme.fontFamily
-                                font.pixelSize: 15
-                            }
-
-                            Timer {
-                                id: answerCopyReset
-                                interval: 1400
-                                onTriggered: answerCopied = false
-                            }
-
-                            Rectangle {
-                                id: messageBubble
-                                width: role === "user"
-                                    ? Math.min(parent.width * 0.78,
-                                        Math.max(attachmentCount > 0 ? 320 : 88,
-                                            messageMetrics.advanceWidth + 40))
-                                    : parent.width
-                                implicitHeight: messageContent.implicitHeight
-                                    + (role === "user" ? 28 : 0)
-                                anchors.right: role === "user" ? parent.right : undefined
-                                radius: role === "user" ? 18 : 0
-                                color: role === "user" ? "#2a2a2a" : "transparent"
-
-                                ColumnLayout {
-                                    id: messageContent
-                                    anchors {
-                                        fill: parent
-                                        margins: role === "user" ? 14 : 0
-                                    }
-                                    spacing: 10
-
-                                    Repeater {
-                                        model: attachments
-                                        Rectangle {
-                                            required property string hostPath
-                                            required property string attachmentKind
-                                            required property string displayName
-                                            Layout.preferredWidth: Math.min(300,
-                                                messageBubble.width - 24)
-                                            Layout.preferredHeight: attachmentKind === "image"
-                                                ? 150 : 48
-                                            radius: 12
-                                            color: "#202020"
-                                            clip: true
-
-                                            Image {
-                                                anchors.fill: parent
-                                                visible: attachmentKind === "image"
-                                                source: visible ? "file://" + hostPath : ""
-                                                fillMode: Image.PreserveAspectFit
-                                                asynchronous: true
-                                            }
-
-                                            RowLayout {
-                                                anchors { fill: parent; margins: 10 }
-                                                visible: attachmentKind === "text"
-                                                spacing: 10
-
-                                                Rectangle {
-                                                    Layout.preferredWidth: 28
-                                                    Layout.preferredHeight: 28
-                                                    radius: 7
-                                                    color: "#343434"
-
-                                                    Text {
-                                                        anchors.centerIn: parent
-                                                        text: "TXT"
-                                                        color: "#cfcfcf"
-                                                        font.family: Theme.fontFamily
-                                                        font.pixelSize: 8
-                                                        font.weight: Font.DemiBold
-                                                    }
-                                                }
-
-                                                Text {
-                                                    Layout.fillWidth: true
-                                                    text: displayName
-                                                    color: "#dedede"
-                                                    elide: Text.ElideMiddle
-                                                    font.family: Theme.fontFamily
-                                                    font.pixelSize: 11
-                                                }
-                                            }
-                                        }
-                                    }
-
-                                    TextEdit {
-                                        Layout.fillWidth: true
-                                        Layout.preferredHeight: visible ? contentHeight : 0
-                                        visible: role !== "assistant" && role !== "activity"
-                                            && body.length > 0
-                                        text: body
-                                        textFormat: Text.PlainText
-                                        wrapMode: Text.Wrap
-                                        color: role === "notice" ? "#b4b4b4" : "#eeeeee"
-                                        selectionColor: "#515151"
-                                        selectedTextColor: "#ffffff"
-                                        font.family: Theme.fontFamily
-                                        font.pixelSize: 15
-                                        readOnly: true
-                                        selectByMouse: true
-                                    }
-
-                                    Rectangle {
-                                        id: activityCard
-                                        readonly property string detailText: body
-                                            + (activityOutput.length > 0
-                                                ? (body.length > 0 ? "\n\n" : "") + activityOutput
-                                                : "")
-
-                                        Layout.fillWidth: true
-                                        Layout.preferredHeight: visible
-                                            ? activityLayout.implicitHeight + 24 : 0
-                                        visible: role === "activity"
-                                        radius: 12
-                                        color: "#202020"
-                                        border.width: 1
-                                        border.color: "#343434"
-
-                                        ColumnLayout {
-                                            id: activityLayout
-                                            anchors {
-                                                left: parent.left
-                                                right: parent.right
-                                                top: parent.top
-                                                margins: 12
-                                            }
-                                            spacing: 8
-
-                                            RowLayout {
-                                                Layout.fillWidth: true
-                                                spacing: 10
-
-                                                Rectangle {
-                                                    Layout.preferredWidth: 9
-                                                    Layout.preferredHeight: 9
-                                                    radius: 5
-                                                    color: messageStatus === "failed"
-                                                        || messageStatus === "declined"
-                                                            ? Theme.red
-                                                            : messageStatus === "completed"
-                                                                ? Theme.green : Theme.blue
-
-                                                    SequentialAnimation on opacity {
-                                                        running: activityCard.visible
-                                                            && messageStatus === "streaming"
-                                                        loops: Animation.Infinite
-                                                        NumberAnimation {
-                                                            to: 0.3
-                                                            duration: 520
-                                                            easing.type: Easing.InOutSine
-                                                        }
-                                                        NumberAnimation {
-                                                            to: 1
-                                                            duration: 520
-                                                            easing.type: Easing.InOutSine
-                                                        }
-                                                    }
-                                                }
-
-                                                Text {
-                                                    Layout.fillWidth: true
-                                                    text: activityTitle
-                                                    color: "#e8e8e8"
-                                                    elide: Text.ElideRight
-                                                    font.family: Theme.fontFamily
-                                                    font.pixelSize: 13
-                                                    font.weight: Font.DemiBold
-                                                }
-
-                                                Text {
-                                                    text: root.activityStatusLabel(messageStatus)
-                                                    color: messageStatus === "failed"
-                                                        || messageStatus === "declined"
-                                                            ? Theme.red : "#858585"
-                                                    font.family: Theme.fontFamily
-                                                    font.pixelSize: 11
-                                                }
-                                            }
-
-                                            Text {
-                                                Layout.fillWidth: true
-                                                visible: activityCard.detailText.length > 0
-                                                text: activityCard.detailText
-                                                color: "#aaaaaa"
-                                                wrapMode: Text.WrapAnywhere
-                                                maximumLineCount: activityExpanded ? 1000 : 5
-                                                elide: Text.ElideRight
-                                                font.family: Theme.fontFamily
-                                                font.pixelSize: 12
-                                                lineHeight: 1.15
-                                            }
-                                        }
-
-                                        MouseArea {
-                                            anchors.fill: parent
-                                            enabled: activityCard.detailText.length > 0
-                                            cursorShape: enabled
-                                                ? Qt.PointingHandCursor : Qt.ArrowCursor
-                                            onClicked: activityExpanded = !activityExpanded
-                                        }
-                                    }
-
-                                    ColumnLayout {
-                                        Layout.fillWidth: true
-                                        Layout.preferredHeight: visible ? implicitHeight : 0
-                                        visible: role === "assistant" && body.length > 0
-                                        spacing: 10
-
-                                        Repeater {
-                                            model: root.markdownBlocks(body)
-
-                                            ColumnLayout {
-                                                required property var modelData
-                                                Layout.fillWidth: true
-                                                spacing: 0
-
-                                                TextEdit {
-                                                    Layout.fillWidth: true
-                                                    Layout.preferredHeight: visible
-                                                        ? contentHeight : 0
-                                                    visible: modelData.kind === "markdown"
-                                                        && modelData.text.length > 0
-                                                    text: root.safeAssistantMarkdown(modelData.text)
-                                                    textFormat: Text.MarkdownText
-                                                    wrapMode: Text.Wrap
-                                                    color: "#eeeeee"
-                                                    selectionColor: "#515151"
-                                                    selectedTextColor: "#ffffff"
-                                                    font.family: Theme.fontFamily
-                                                    font.pixelSize: 15
-                                                    readOnly: true
-                                                    selectByMouse: true
-                                                    onLinkActivated: link => root.openLink(link)
-                                                }
-
-                                                Rectangle {
-                                                    id: codeBlock
-                                                    property bool copied: false
-
-                                                    Layout.fillWidth: true
-                                                    Layout.preferredHeight: visible
-                                                        ? codeLayout.implicitHeight + 20 : 0
-                                                    visible: modelData.kind === "code"
-                                                    radius: 10
-                                                    color: "#111111"
-                                                    border.width: 1
-                                                    border.color: "#343434"
-
-                                                    Timer {
-                                                        id: codeCopyReset
-                                                        interval: 1400
-                                                        onTriggered: codeBlock.copied = false
-                                                    }
-
-                                                    ColumnLayout {
-                                                        id: codeLayout
-                                                        anchors {
-                                                            left: parent.left
-                                                            right: parent.right
-                                                            top: parent.top
-                                                            margins: 10
-                                                        }
-                                                        spacing: 8
-
-                                                        RowLayout {
-                                                            Layout.fillWidth: true
-
-                                                            Text {
-                                                                Layout.fillWidth: true
-                                                                text: modelData.language.length > 0
-                                                                    ? modelData.language : "code"
-                                                                color: "#858585"
-                                                                font.family: Theme.fontFamily
-                                                                font.pixelSize: 11
-                                                            }
-
-                                                            Rectangle {
-                                                                Layout.preferredWidth: 30
-                                                                Layout.preferredHeight: 26
-                                                                radius: 7
-                                                                color: codeCopyMouse.containsMouse
-                                                                    ? "#343434" : "#242424"
-
-                                                                Item {
-                                                                    anchors.centerIn: parent
-                                                                    width: 15
-                                                                    height: 15
-
-                                                                    Rectangle {
-                                                                        x: 4
-                                                                        width: 10
-                                                                        height: 10
-                                                                        radius: 1
-                                                                        color: "transparent"
-                                                                        border.width: 1
-                                                                        border.color: codeBlock.copied
-                                                                            ? Theme.green : "#b5b5b5"
-                                                                    }
-
-                                                                    Rectangle {
-                                                                        y: 4
-                                                                        width: 10
-                                                                        height: 10
-                                                                        radius: 1
-                                                                        color: codeCopyMouse.containsMouse
-                                                                            ? "#343434" : "#242424"
-                                                                        border.width: 1
-                                                                        border.color: codeBlock.copied
-                                                                            ? Theme.green : "#b5b5b5"
-                                                                    }
-                                                                }
-
-                                                                MouseArea {
-                                                                    id: codeCopyMouse
-                                                                    anchors.fill: parent
-                                                                    hoverEnabled: true
-                                                                    cursorShape: Qt.PointingHandCursor
-                                                                    onClicked: {
-                                                                        if (root.copyText(modelData.text)) {
-                                                                            codeBlock.copied = true;
-                                                                            codeCopyReset.restart();
-                                                                        }
-                                                                    }
-                                                                }
-                                                            }
-                                                        }
-
-                                                        TextEdit {
-                                                            Layout.fillWidth: true
-                                                            Layout.preferredHeight: contentHeight
-                                                            text: modelData.text
-                                                            textFormat: Text.PlainText
-                                                            wrapMode: TextEdit.WrapAnywhere
-                                                            color: "#d8d8d8"
-                                                            selectionColor: "#515151"
-                                                            selectedTextColor: "#ffffff"
-                                                            font.family: Theme.fontFamily
-                                                            font.pixelSize: 13
-                                                            readOnly: true
-                                                            selectByMouse: true
-                                                        }
-                                                    }
-                                                }
-                                            }
-                                        }
-
-                                        RowLayout {
-                                            Layout.fillWidth: true
-                                            Layout.preferredHeight: 28
-
-                                            Item { Layout.fillWidth: true }
-
-                                            Rectangle {
-                                                Layout.preferredWidth: 32
-                                                Layout.preferredHeight: 28
-                                                radius: 8
-                                                color: answerCopyMouse.containsMouse
-                                                    ? "#2d2d2d" : "transparent"
-
-                                                Item {
-                                                    anchors.centerIn: parent
-                                                    width: 15
-                                                    height: 15
-
-                                                    Rectangle {
-                                                        x: 4
-                                                        width: 10
-                                                        height: 10
-                                                        radius: 1
-                                                        color: "transparent"
-                                                        border.width: 1
-                                                        border.color: answerCopied
-                                                            ? Theme.green : "#9b9b9b"
-                                                    }
-
-                                                    Rectangle {
-                                                        y: 4
-                                                        width: 10
-                                                        height: 10
-                                                        radius: 1
-                                                        color: answerCopyMouse.containsMouse
-                                                            ? "#2d2d2d" : "#171717"
-                                                        border.width: 1
-                                                        border.color: answerCopied
-                                                            ? Theme.green : "#9b9b9b"
-                                                    }
-                                                }
-
-                                                MouseArea {
-                                                    id: answerCopyMouse
-                                                    anchors.fill: parent
-                                                    hoverEnabled: true
-                                                    cursorShape: Qt.PointingHandCursor
-                                                    onClicked: {
-                                                        if (root.copyText(body)) {
-                                                            answerCopied = true;
-                                                            answerCopyReset.restart();
-                                                        }
-                                                    }
-                                                }
-                                            }
-                                        }
-                                    }
-
-                                    Text {
-                                        Layout.preferredHeight: visible ? implicitHeight : 0
-                                        visible: role !== "activity"
-                                            && (messageStatus !== "completed"
-                                                || errorText.length > 0)
-                                        text: errorText.length > 0 ? errorText
-                                            : messageStatus === "streaming"
-                                                ? "Responding…" : messageStatus
-                                        color: messageStatus === "failed"
-                                            || errorText.length > 0
-                                                ? Theme.red : "#777777"
-                                        font.family: Theme.fontFamily
-                                        font.pixelSize: 13
-                                        wrapMode: Text.Wrap
-                                    }
-                                }
-                            }
-                        }
-                    }
-
-                    Item {
-                        Layout.fillWidth: true
-                        Layout.preferredHeight: composerStack.implicitHeight
-                            + (root.conversationStarted ? 20 : 4)
-
-                        ColumnLayout {
-                            id: composerStack
-                            anchors {
-                                left: parent.left
-                                right: parent.right
-                                bottom: parent.bottom
-                                leftMargin: root.conversationStarted ? 20 : 0
-                                rightMargin: root.conversationStarted ? 20 : 0
-                                bottomMargin: root.conversationStarted ? 20 : 4
-                            }
-                            spacing: 10
-
-                            Rectangle {
-                                id: commandPalette
-                                readonly property string draft: root.commandDraft(composer.text)
-
-                                Layout.fillWidth: true
-                                Layout.preferredHeight: visible
-                                    ? Math.min(288, commandList.contentHeight + 12) : 0
-                                visible: draft.length > 0
-                                    && root.commandItems(draft).length > 0
-                                radius: 29
-                                color: "#242424"
-                                border.width: 1
-                                border.color: "#3c3c3c"
-                                clip: true
-
-                                ListView {
-                                    id: commandList
-                                    anchors { fill: parent; margins: 6 }
-                                    model: root.commandItems(commandPalette.draft)
-                                    currentIndex: 0
-                                    clip: true
-                                    boundsBehavior: Flickable.StopAtBounds
-
-                                    delegate: Rectangle {
-                                        required property var modelData
-                                        required property int index
-                                        width: ListView.view.width
-                                        height: 46
-                                        radius: height / 2
-                                        color: index === commandList.currentIndex
-                                            || commandMouse.containsMouse ? "#353535" : "transparent"
-
-                                        RowLayout {
-                                            anchors { fill: parent; leftMargin: 14; rightMargin: 14 }
-                                            spacing: 14
-
-                                            Text {
-                                                text: modelData.label
-                                                color: "#f0f0f0"
-                                                font.family: Theme.fontFamily
-                                                font.pixelSize: 13
-                                                font.weight: Font.DemiBold
-                                            }
-                                            Text {
-                                                Layout.fillWidth: true
-                                                text: modelData.detail
-                                                color: "#8a8a8a"
-                                                elide: Text.ElideRight
-                                                horizontalAlignment: Text.AlignRight
-                                                font.family: Theme.fontFamily
-                                                font.pixelSize: 12
-                                            }
-                                        }
-
-                                        MouseArea {
-                                            id: commandMouse
-                                            anchors.fill: parent
-                                            hoverEnabled: true
-                                            onEntered: commandList.currentIndex = index
-                                            onClicked: chatWindow.acceptMenuItem(modelData)
-                                        }
-                                    }
-                                }
-                            }
-
-                            Rectangle {
-                                id: composerFrame
-                                Layout.fillWidth: true
-                                Layout.preferredHeight: composerInner.implicitHeight + 24
-                                radius: root.conversationStarted ? 22 : 28
-                                color: root.conversationStarted ? "#272727" : "transparent"
-                                border.width: root.conversationStarted ? 1 : 0
-                                border.color: "#343434"
-
-                                ColumnLayout {
-                                    id: composerInner
-                                    anchors {
-                                        left: parent.left
-                                        right: parent.right
-                                        top: parent.top
-                                        leftMargin: root.conversationStarted ? 12 : 20
-                                        rightMargin: root.conversationStarted ? 12 : 20
-                                        topMargin: 12
-                                    }
-                                    spacing: 8
-
-                                    RowLayout {
-                                        Layout.fillWidth: true
-                                        visible: root.pendingAttachments.count > 0
-                                        spacing: 8
-
-                                        Repeater {
-                                            model: root.pendingAttachments
-                                            Rectangle {
-                                                required property string hostPath
-                                                required property string attachmentKind
-                                                required property string displayName
-                                                required property int index
-                                                Layout.preferredWidth: attachmentKind === "image"
-                                                    ? 108 : 220
-                                                Layout.preferredHeight: attachmentKind === "image"
-                                                    ? 68 : 48
-                                                radius: 10
-                                                color: "#1c1c1c"
-                                                clip: true
-
-                                                Image {
-                                                    anchors { fill: parent; margins: 3 }
-                                                    visible: attachmentKind === "image"
-                                                    source: visible ? "file://" + hostPath : ""
-                                                    fillMode: Image.PreserveAspectFit
-                                                }
-
-                                                RowLayout {
-                                                    anchors {
-                                                        fill: parent
-                                                        leftMargin: 10
-                                                        rightMargin: 38
-                                                        topMargin: 8
-                                                        bottomMargin: 8
-                                                    }
-                                                    visible: attachmentKind === "text"
-                                                    spacing: 9
-
-                                                    Rectangle {
-                                                        Layout.preferredWidth: 28
-                                                        Layout.preferredHeight: 28
-                                                        radius: 7
-                                                        color: "#343434"
-
-                                                        Text {
-                                                            anchors.centerIn: parent
-                                                            text: "TXT"
-                                                            color: "#cfcfcf"
-                                                            font.family: Theme.fontFamily
-                                                            font.pixelSize: 8
-                                                            font.weight: Font.DemiBold
-                                                        }
-                                                    }
-
-                                                    Text {
-                                                        Layout.fillWidth: true
-                                                        text: displayName
-                                                        color: "#dedede"
-                                                        elide: Text.ElideMiddle
-                                                        font.family: Theme.fontFamily
-                                                        font.pixelSize: 11
-                                                    }
-                                                }
-
-                                                Rectangle {
-                                                    width: 24
-                                                    height: 24
-                                                    anchors { top: parent.top; right: parent.right; margins: 4 }
-                                                    radius: 12
-                                                    color: "#d8d8d8"
-
-                                                    Text {
-                                                        anchors.centerIn: parent
-                                                        text: "×"
-                                                        color: "#171717"
-                                                        font.pixelSize: 17
-                                                    }
-                                                    MouseArea {
-                                                        anchors.fill: parent
-                                                        onClicked: root.removeAttachment(index)
-                                                    }
-                                                }
-                                            }
-                                        }
-                                    }
-
-                                    Item {
-                                        Layout.fillWidth: true
-                                        Layout.preferredHeight: Math.max(
-                                            root.conversationStarted ? 72 : 88,
-                                            Math.min(144, composer.contentHeight + 32))
-
-                                        Flickable {
-                                            anchors {
-                                                fill: parent
-                                                leftMargin: 2
-                                                rightMargin: 2
-                                                topMargin: 4
-                                                bottomMargin: 4
-                                            }
-                                            contentWidth: width
-                                            contentHeight: composer.contentHeight
-                                            clip: true
-
-                                            TextEdit {
-                                                id: composer
-                                                width: parent.width
-                                                color: "#eeeeee"
-                                                selectionColor: "#515151"
-                                                selectedTextColor: "#ffffff"
-                                                wrapMode: TextEdit.Wrap
-                                                font.family: Theme.fontFamily
-                                                font.pixelSize: 15
-
-                                                onTextChanged: commandList.currentIndex = 0
-
-                                                Text {
-                                                    visible: composer.text.length === 0
-                                                    text: root.conversationStarted
-                                                        ? "Message Codex" : "Ask Codex anything locally"
-                                                    color: "#707070"
-                                                    font: composer.font
-                                                }
-
-                                                Keys.onPressed: event => {
-                                                    if (event.matches(StandardKey.Paste)) {
-                                                        root.pasteClipboardImage();
-                                                        event.accepted = false;
-                                                        return;
-                                                    }
-                                                    if (event.key === Qt.Key_Escape) {
-                                                        root.close();
-                                                        event.accepted = true;
-                                                    } else if (commandPalette.visible
-                                                            && event.key === Qt.Key_Up) {
-                                                        commandList.currentIndex = Math.max(0,
-                                                            commandList.currentIndex - 1);
-                                                        event.accepted = true;
-                                                    } else if (commandPalette.visible
-                                                            && event.key === Qt.Key_Down) {
-                                                        commandList.currentIndex = Math.min(
-                                                            commandList.count - 1,
-                                                            commandList.currentIndex + 1);
-                                                        event.accepted = true;
-                                                    } else if (commandPalette.visible
-                                                            && event.key === Qt.Key_Tab) {
-                                                        const items = root.commandItems(
-                                                            commandPalette.draft);
-                                                        const index = Math.max(0,
-                                                            commandList.currentIndex);
-                                                        completeMenuItem(items[index]);
-                                                        event.accepted = true;
-                                                    } else if ((event.key === Qt.Key_Return
-                                                                || event.key === Qt.Key_Enter)
-                                                            && !(event.modifiers & Qt.ShiftModifier)) {
-                                                        chatWindow.submitComposer();
-                                                        event.accepted = true;
-                                                    }
-                                                }
-                                            }
-                                        }
-                                    }
-
-                                    RowLayout {
-                                        Layout.fillWidth: true
-                                        Layout.preferredHeight: 40
-                                        Layout.leftMargin: 2
-                                        Layout.rightMargin: 0
-                                        spacing: 12
-
-                                        RowLayout {
-                                            visible: root.lastError.length === 0
-                                                && !root.attachmentsBusy
-                                            spacing: 7
-
-                                            Rectangle {
-                                                width: 7
-                                                height: 7
-                                                radius: 3.5
-                                                color: root.maintenanceStatusVisible
-                                                    ? Theme.blue
-                                                    : root.codexAuthorized
-                                                        ? Theme.green : "#666666"
-                                            }
-
-                                            Text {
-                                                text: root.maintenanceStatusVisible
-                                                    ? root.statusText
-                                                    : root.codexAuthorized
-                                                        ? "Authorized via sbx" : root.statusText
-                                                color: root.maintenanceStatusVisible
-                                                    ? Theme.blue
-                                                    : root.codexAuthorized
-                                                        ? "#a8b8a4" : "#858585"
-                                                font.family: Theme.fontFamily
-                                                font.pixelSize: 11
-                                            }
-                                        }
-
-                                        Text {
-                                            Layout.fillWidth: visible
-                                            visible: root.lastError.length > 0
-                                                || root.attachmentsBusy
-                                            text: root.attachmentsBusy
-                                                ? "Adding file…"
-                                                : screenshot.state === "failed"
-                                                    ? root.lastError
-                                                        + (screenshot.failureStage === "copy"
-                                                            ? "  /retry  /discard" : "  /discard")
-                                                    : root.lastError
-                                            color: root.lastError.length > 0
-                                                ? Theme.red : "#858585"
-                                            wrapMode: Text.Wrap
-                                            maximumLineCount: 2
-                                            elide: Text.ElideRight
-                                            font.family: Theme.fontFamily
-                                            font.pixelSize: 11
-                                        }
-
-                                        Item { Layout.fillWidth: true }
-
-                                        Text {
-                                            text: root.modelStatusText()
-                                            color: "#d8d8d8"
-                                            font.family: Theme.fontFamily
-                                            font.pixelSize: 12
-                                            font.weight: Font.Medium
-                                        }
-
-                                        ActionButton {
-                                            stopMode: root.isGenerating
-                                            enabled: root.isGenerating || (!root.submissionStarting
-                                                && !root.attachmentsBusy
-                                                && (composer.text.trim().length > 0
-                                                    || root.pendingAttachments.count > 0))
-                                            onClicked: chatWindow.submitComposer()
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-
-            Connections {
-                target: root
-                function onSubmissionAccepted() { composer.text = ""; }
-            }
-        }
+    AiChatView {
+        controller: root
     }
 
-
-    component ActionButton: Rectangle {
-        id: actionButton
-        property bool stopMode: false
-        signal clicked()
-
-        implicitWidth: 36
-        implicitHeight: 36
-        radius: 18
-        color: stopMode ? "#f4f4f4"
-            : actionMouse.containsMouse && enabled ? "#dedede" : "#a8a8a8"
-        opacity: enabled ? 1 : 0.38
-
-        Canvas {
-            anchors.fill: parent
-            visible: !actionButton.stopMode
-            onPaint: {
-                const context = getContext("2d");
-                context.clearRect(0, 0, width, height);
-                context.strokeStyle = "#171717";
-                context.lineWidth = 2;
-                context.lineCap = "round";
-                context.lineJoin = "round";
-                context.beginPath();
-                context.moveTo(11, 18);
-                context.lineTo(18, 11);
-                context.lineTo(25, 18);
-                context.moveTo(18, 11);
-                context.lineTo(18, 25);
-                context.stroke();
-            }
-        }
-
-        Rectangle {
-            anchors.centerIn: parent
-            width: 10
-            height: 10
-            radius: 2
-            visible: actionButton.stopMode
-            color: "#101010"
-        }
-
-        MouseArea {
-            id: actionMouse
-            anchors.fill: parent
-            hoverEnabled: true
-            enabled: actionButton.enabled
-            onClicked: actionButton.clicked()
-        }
-    }
 }
