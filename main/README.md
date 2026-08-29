@@ -87,6 +87,10 @@ schema_dir="$(mktemp -d)"
 sbx exec quickshell-ai-chat codex app-server generate-ts --out "$schema_dir/ts"
 sbx exec quickshell-ai-chat codex app-server generate-json-schema --out "$schema_dir/json"
 ```
+Sandbox checks stop after 20 seconds, workspace preparation after 15 seconds,
+and first-time sandbox creation after five minutes. A timeout stops the stuck
+`sbx` process and shows a recovery command; resolve sign-in, daemon, network,
+or filesystem problems in a terminal, then run `/reconnect`.
 
 Available IPC calls are:
 

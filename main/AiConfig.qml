@@ -7,6 +7,9 @@ QtObject {
     readonly property string sandboxName: "quickshell-ai-chat"
     readonly property string sbxExecutable: Quickshell.env("HOME") + "/.local/bin/sbx"
     readonly property string sandboxWorkspace: Quickshell.stateDir + "/ai-sandbox-workspace"
+    readonly property int sandboxCheckTimeoutMs: 20000
+    readonly property int sandboxWorkspaceTimeoutMs: 15000
+    readonly property int sandboxCreateTimeoutMs: 300000
     readonly property bool backendAutoStart: true
     readonly property bool debug: Quickshell.env("QUICKSHELL_AI_DEBUG") === "1"
     readonly property int chatWidth: 760

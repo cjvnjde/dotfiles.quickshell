@@ -28,6 +28,11 @@ Scope {
     property string diagnosticText: ""
     property string resolvedSandboxName: ""
     property bool discoveringSandbox: false
+    property string sandboxSetupStage: ""
+    property bool sandboxSetupTimedOut: false
+    readonly property bool sandboxSetupRunning: sandboxDiscovery.running
+        || resetSandboxWorkspace.running || prepareSandboxWorkspace.running
+        || createChatSandbox.running
     property bool captureRequested: false
     property int conversationGeneration: 0
     property var pendingThreadDeletes: []
@@ -49,8 +54,17 @@ Scope {
     signal focusComposer()
 
     function statusForState(value) {
-        if (discoveringSandbox) {
+        if (sandboxSetupStage === "checking") {
             return "Checking Codex sandbox…";
+        }
+        if (sandboxSetupStage === "preparing") {
+            return "Preparing Codex sandbox…";
+        }
+        if (sandboxSetupStage === "creating") {
+            return "Creating Codex sandbox…";
+        }
+        if (discoveringSandbox) {
+            return "Setting up Codex sandbox…";
         }
         if (value === "connecting") {
             return "Starting sandbox…";
@@ -287,6 +301,57 @@ Scope {
             .replace(/</g, "&lt;");
     }
 
+    function beginSandboxSetupStage(stage, timeoutMs) {
+        sandboxSetupStage = stage;
+        sandboxSetupTimeout.interval = timeoutMs;
+        sandboxSetupTimeout.restart();
+    }
+
+    function finishSandboxSetup() {
+        sandboxSetupTimeout.stop();
+        sandboxSetupStage = "";
+        sandboxSetupTimedOut = false;
+        discoveringSandbox = false;
+    }
+
+    function failSandboxSetup(message) {
+        sandboxSetupTimeout.stop();
+        sandboxSetupStage = "";
+        discoveringSandbox = false;
+        captureRequested = false;
+        transport.state = "error";
+        lastError = message;
+        shown = true;
+    }
+
+    function stopSandboxSetupProcess() {
+        if (sandboxDiscovery.running) {
+            sandboxDiscovery.signal(9);
+        }
+        if (resetSandboxWorkspace.running) {
+            resetSandboxWorkspace.signal(9);
+        }
+        if (prepareSandboxWorkspace.running) {
+            prepareSandboxWorkspace.signal(9);
+        }
+        if (createChatSandbox.running) {
+            createChatSandbox.signal(9);
+        }
+    }
+
+    function sandboxSetupTimeoutMessage(stage) {
+        if (stage === "checking") {
+            return "sbx ls timed out. Run sbx ls in a terminal, resolve Docker "
+                + "sign-in or sandboxd, then use /reconnect.";
+        }
+        if (stage === "creating") {
+            return "sbx create timed out. Run sbx diagnose in a terminal, "
+                + "then use /reconnect.";
+        }
+        return "Preparing the sandbox workspace timed out. Check filesystem "
+            + "access, then use /reconnect.";
+    }
+
     function open() {
         shown = true;
         if (AiConfig.backendAutoStart && connectionState === "disconnected") {
@@ -300,15 +365,20 @@ Scope {
             transport.start();
             return;
         }
-        if (!sandboxDiscovery.running) {
-            discoveringSandbox = true;
-            lastError = "";
-            sandboxDiscovery.running = true;
+        if (sandboxSetupRunning) {
+            return;
         }
+
+        sandboxSetupTimedOut = false;
+        discoveringSandbox = true;
+        lastError = "";
+        beginSandboxSetupStage("checking", AiConfig.sandboxCheckTimeoutMs);
+        sandboxDiscovery.running = true;
     }
 
     function createSandbox() {
         discoveringSandbox = true;
+        beginSandboxSetupStage("preparing", AiConfig.sandboxWorkspaceTimeoutMs);
         resetSandboxWorkspace.command = [
             "rm", "-rf", "--", AiConfig.sandboxWorkspace
         ];
@@ -867,6 +937,21 @@ Scope {
     ListModel { id: messageModel }
     ListModel { id: attachmentModel }
 
+    Timer {
+        id: sandboxSetupTimeout
+
+        repeat: false
+        onTriggered: {
+            if (!root.sandboxSetupRunning) {
+                return;
+            }
+            const stage = root.sandboxSetupStage;
+            root.sandboxSetupTimedOut = true;
+            root.stopSandboxSetupProcess();
+            root.failSandboxSetup(root.sandboxSetupTimeoutMessage(stage));
+        }
+    }
+
     Process {
         id: sandboxDiscovery
 
@@ -874,31 +959,30 @@ Scope {
         stdout: StdioCollector { id: sandboxListOutput }
         stderr: StdioCollector { id: sandboxListError }
         onExited: function(exitCode) {
+            sandboxSetupTimeout.stop();
+            if (root.sandboxSetupTimedOut) {
+                return;
+            }
             if (exitCode !== 0) {
-                root.discoveringSandbox = false;
-                transport.state = "error";
-                root.lastError = "Could not list sbx sandboxes: "
-                    + sandboxListError.text.trim().slice(0, 180);
-                root.captureRequested = false;
-                root.shown = true;
+                const diagnostic = sandboxListError.text.trim().slice(0, 180);
+                root.failSandboxSetup(diagnostic.length > 0
+                    ? "Could not list sbx sandboxes: " + diagnostic
+                    : "Could not list sbx sandboxes. Run sbx ls in a terminal.");
                 return;
             }
             const sandboxes = sandboxListOutput.text.split(/\r?\n/)
                 .map(name => name.trim()).filter(name => name.length > 0);
-            if (sandboxes.length === 0) {
+            if (sandboxes.indexOf(AiConfig.sandboxName) < 0) {
                 root.createSandbox();
                 return;
             }
-            if (sandboxes.indexOf(AiConfig.sandboxName) >= 0) {
-                root.resolvedSandboxName = AiConfig.sandboxName;
-                root.discoveringSandbox = false;
-                if (root.captureRequested) {
-                    root.beginCapture();
-                }
-                transport.start();
-            } else {
-                root.createSandbox();
+
+            root.resolvedSandboxName = AiConfig.sandboxName;
+            root.finishSandboxSetup();
+            if (root.captureRequested) {
+                root.beginCapture();
             }
+            transport.start();
         }
     }
 
@@ -907,16 +991,21 @@ Scope {
 
         stderr: StdioCollector { id: resetWorkspaceError }
         onExited: function(exitCode) {
+            sandboxSetupTimeout.stop();
+            if (root.sandboxSetupTimedOut) {
+                return;
+            }
             if (exitCode !== 0) {
-                root.discoveringSandbox = false;
-                transport.state = "error";
-                root.lastError = "Could not reset the private AI sandbox workspace: "
-                    + resetWorkspaceError.text.trim().slice(0, 180);
+                root.failSandboxSetup(
+                    "Could not reset the private AI sandbox workspace: "
+                        + resetWorkspaceError.text.trim().slice(0, 180));
                 return;
             }
             prepareSandboxWorkspace.command = [
                 "install", "-d", "-m", "700", "--", AiConfig.sandboxWorkspace
             ];
+            root.beginSandboxSetupStage(
+                "preparing", AiConfig.sandboxWorkspaceTimeoutMs);
             prepareSandboxWorkspace.running = true;
         }
     }
@@ -925,16 +1014,21 @@ Scope {
         id: prepareSandboxWorkspace
 
         onExited: function(exitCode) {
+            sandboxSetupTimeout.stop();
+            if (root.sandboxSetupTimedOut) {
+                return;
+            }
             if (exitCode !== 0) {
-                root.discoveringSandbox = false;
-                transport.state = "error";
-                root.lastError = "Could not create the private AI sandbox workspace.";
+                root.failSandboxSetup(
+                    "Could not create the private AI sandbox workspace.");
                 return;
             }
             createChatSandbox.command = [
                 AiConfig.sbxExecutable, "create", "codex", AiConfig.sandboxWorkspace,
                 "--name", AiConfig.sandboxName, "--quiet"
             ];
+            root.beginSandboxSetupStage(
+                "creating", AiConfig.sandboxCreateTimeoutMs);
             createChatSandbox.running = true;
         }
     }
@@ -945,19 +1039,21 @@ Scope {
         stdout: StdioCollector {}
         stderr: StdioCollector { id: createSandboxError }
         onExited: function(exitCode) {
-            root.discoveringSandbox = false;
+            sandboxSetupTimeout.stop();
+            if (root.sandboxSetupTimedOut) {
+                return;
+            }
             if (exitCode !== 0) {
-                transport.state = "error";
                 const diagnostic = createSandboxError.text.trim().slice(0, 600);
-                root.lastError = "sbx create failed for " + AiConfig.sandboxName
-                    + " using " + AiConfig.sandboxWorkspace + ": " + diagnostic;
+                root.failSandboxSetup(
+                    "sbx create failed for " + AiConfig.sandboxName
+                        + " using " + AiConfig.sandboxWorkspace + ": " + diagnostic);
                 console.warn("AI sandbox creation failed:", diagnostic);
-                root.captureRequested = false;
-                root.shown = true;
                 return;
             }
             root.resolvedSandboxName = AiConfig.sandboxName;
             root.diagnosticText = "Using dedicated sandbox " + root.resolvedSandboxName;
+            root.finishSandboxSetup();
             if (root.captureRequested) {
                 root.beginCapture();
             }
