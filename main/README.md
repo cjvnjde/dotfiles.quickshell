@@ -61,10 +61,11 @@ chat. `/reconnect` reloads the chat-only kit and app-server. `/update` updates
 Codex inside the existing sandbox, then reconnects. `/rebuild` deletes and
 recreates the dedicated sandbox, updates Codex, reloads the kit, and starts a
 new chat. Model and thinking choices come from app-server's `model/list`
-response and are applied to subsequent turns. `Enter` executes a complete
-command immediately, accepts
-a highlighted partial command, or sends a message. `Shift+Enter` inserts a
-newline, and `Escape` hides the overlay without stopping an active response.
+response and are applied to subsequent turns. `Tab` completes the highlighted
+command without executing it. `Enter` executes a complete command immediately,
+accepts a highlighted partial command, or sends a message. `Shift+Enter`
+inserts a newline, and `Escape` hides the overlay without stopping an active
+response.
 The current in-memory conversation is preserved while the overlay is hidden.
 
 The feature owns one dedicated sandbox named `quickshell-ai-chat`, configured

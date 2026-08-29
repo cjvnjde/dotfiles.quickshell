@@ -1820,6 +1820,12 @@ Scope {
             readonly property var monitor: Hyprland.monitorFor(modelData)
             readonly property bool focusedScreen: monitor !== null && monitor.focused
 
+            function completeMenuItem(item) {
+                composer.text = root.replaceCommandDraft(composer.text, item.draft);
+                composer.cursorPosition = composer.length;
+                composer.forceActiveFocus();
+            }
+
             function acceptMenuItem(item) {
                 if (item.immediate) {
                     composer.text = root.removeCommandDraft(composer.text);
@@ -1828,9 +1834,7 @@ Scope {
                     return;
                 }
 
-                composer.text = root.replaceCommandDraft(composer.text, item.draft);
-                composer.cursorPosition = composer.length;
-                composer.forceActiveFocus();
+                completeMenuItem(item);
             }
 
             function submitComposer() {
@@ -2687,6 +2691,14 @@ Scope {
                                                         commandList.currentIndex = Math.min(
                                                             commandList.count - 1,
                                                             commandList.currentIndex + 1);
+                                                        event.accepted = true;
+                                                    } else if (commandPalette.visible
+                                                            && event.key === Qt.Key_Tab) {
+                                                        const items = root.commandItems(
+                                                            commandPalette.draft);
+                                                        const index = Math.max(0,
+                                                            commandList.currentIndex);
+                                                        completeMenuItem(items[index]);
                                                         event.accepted = true;
                                                     } else if ((event.key === Qt.Key_Return
                                                                 || event.key === Qt.Key_Enter)
