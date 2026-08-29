@@ -623,7 +623,7 @@ Scope {
             const threadParams = {
                 cwd: AiConfig.sandboxWorkingDirectory,
                 approvalPolicy: "never",
-                sandbox: "read-only"
+                sandbox: "danger-full-access"
             };
             if (selectedModel.length > 0) {
                 threadParams.model = selectedModel;
@@ -661,7 +661,7 @@ Scope {
             input: input,
             cwd: AiConfig.sandboxWorkingDirectory,
             approvalPolicy: "never",
-            sandboxPolicy: { type: "readOnly" }
+            sandboxPolicy: { type: "dangerFullAccess" }
         }), "turnStart", {
             submission: queuedSubmission,
             generation: conversationGeneration

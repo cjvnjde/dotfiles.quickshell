@@ -110,11 +110,12 @@ Set `QUICKSHELL_AI_DEBUG=1` to log sanitized lifecycle diagnostics. Prompt
 text, response bodies, attachment contents, credentials, and complete account
 objects are never logged.
 
-Codex remains a coding agent and may run read-only commands inside its Docker
-sandbox. The client requests `approvalPolicy: never` and a read-only sandbox
-policy, declines command and file-change approvals, grants no requested
-permissions, and exposes no host-side shell controls. These controls restrict
-the agent inside the sandbox; they do not remove Codex's built-in shell tool.
+Codex runs with `approvalPolicy: never` and `dangerFullAccess` inside its
+Docker sandbox. It may execute commands, modify the container filesystem, and
+access the network without approval. The client still declines any approval or
+permission request and exposes no host-side shell controls. `dangerFullAccess`
+disables Codex's nested sandbox only; it does not disable Docker Sandboxes
+isolation.
 
 The Docker sandbox is the host security boundary. This feature mounts only its
 dedicated, mode-`0700` empty workspace below Quickshell's state directory; that
