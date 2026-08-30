@@ -287,9 +287,5 @@ Variants {
             }
         }
 
-        Connections {
-            target: view.controller
-            function onSubmissionAccepted() { composerPanel.clearDraft(); }
-        }
     }
 }

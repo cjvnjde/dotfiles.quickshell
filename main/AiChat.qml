@@ -21,6 +21,9 @@ Scope {
     property string latestActivityItemId: ""
     property var availableModels: []
     property var supportedEfforts: []
+    readonly property var presets: AiConfig.presets
+    readonly property string activePresetName: AiChatLogic.matchingPresetName(
+        presets, selectedModel, selectedEffort)
     property var pendingRequests: ({})
     property var queuedSubmission: null
     property var currentTurnAttachments: []
@@ -107,7 +110,6 @@ Scope {
     readonly property string attachmentState: screenshot.state
     readonly property string attachmentFailureStage: screenshot.failureStage
 
-    signal submissionAccepted()
     signal focusComposer()
     signal threadRenameSucceeded(string threadId)
     signal threadDeleteSucceeded(string threadId)
@@ -188,6 +190,33 @@ Scope {
         }
         selectedEffort = requested;
         lastError = "";
+        return true;
+    }
+
+    function choosePreset(name) {
+        const preset = AiChatLogic.presetByName(presets, name);
+        if (preset === null) {
+            lastError = "Unknown preset. Type /preset to see configured presets.";
+            return false;
+        }
+
+        const presetName = String(preset.name || name).trim();
+        const presetModel = String(preset.model || "").trim();
+        const thinking = String(preset.thinking || "").trim().toLowerCase();
+        const model = AiChatLogic.modelById(availableModels, presetModel);
+        if (model === null) {
+            lastError = "Preset \"" + presetName + "\" uses unknown model \""
+                + presetModel + "\".";
+            return false;
+        }
+        if (thinking.length === 0 || model.efforts.indexOf(thinking) < 0) {
+            lastError = "Preset \"" + presetName
+                + "\" uses unsupported thinking level \"" + thinking + "\".";
+            return false;
+        }
+
+        chooseModel(model.id);
+        chooseEffort(thinking);
         return true;
     }
 
@@ -279,7 +308,7 @@ Scope {
         const argument = pieces.slice(1).join(" ");
         const requiresArgument = command === "/model"
             || command === "/thinking" || command === "/effort"
-            || command === "/activity";
+            || command === "/preset" || command === "/activity";
         if (requiresArgument && argument.length === 0) {
             return false;
         }
@@ -307,6 +336,9 @@ Scope {
         case "/thinking":
         case "/effort":
             chooseEffort(argument);
+            break;
+        case "/preset":
+            choosePreset(argument);
             break;
         case "/activity":
             chooseActivityMode(argument);
@@ -1391,18 +1423,18 @@ Scope {
     function send(text) {
         const prompt = text.trim();
         if (historyVisible || incompatibleActionRunning) {
-            return;
+            return false;
         }
         if (prompt.length === 0 && attachmentModel.count === 0) {
             lastError = "Write a message or attach a file first.";
-            return;
+            return false;
         }
         if (!transport.ready) {
             lastError = "Codex is still connecting. Your draft has been preserved.";
             if (connectionState === "disconnected" || connectionState === "error") {
                 startBackend();
             }
-            return;
+            return false;
         }
 
         const attachments = [];
@@ -1410,7 +1442,7 @@ Scope {
             const attachment = attachmentModel.get(index);
             if (attachment.status !== "ready") {
                 lastError = "Wait for the attachment to finish copying, or remove it.";
-                return;
+                return false;
             }
             attachments.push({
                 token: attachment.token,
@@ -1432,14 +1464,20 @@ Scope {
             if (selectedModel.length > 0) {
                 threadParams.model = selectedModel;
             }
-            call("thread/start", threadParams, "threadStart",
+            const requestId = call("thread/start", threadParams, "threadStart",
                 { generation: conversationGeneration });
+            if (requestId < 0) {
+                queuedSubmission = null;
+                return false;
+            }
         } else if (!prepareOutputsForThread(currentThreadId,
                 { kind: "turnStart" })) {
             submissionStarting = false;
             queuedSubmission = null;
             lastError = "Could not prepare the managed output area.";
+            return false;
         }
+        return true;
     }
 
     function startQueuedTurn() {
@@ -1731,7 +1769,6 @@ Scope {
             isGenerating = true;
             transport.state = "streaming";
             attachmentModel.clear();
-            submissionAccepted();
         } else if (pending.kind === "threadRename") {
             const threadId = pending.context.threadId;
             const index = historyThreadIndex(threadId);

@@ -3,6 +3,49 @@ const test = require("node:test");
 
 const logic = require("./AiChatLogic.js");
 
+test("preset commands resolve configured names", () => {
+    const presets = [
+        { name: "fast", model: "gpt-5.4", thinking: "low" },
+        { name: "deep", model: "gpt-5.4", thinking: "high" }
+    ];
+
+    assert.equal(logic.presetByName(presets, "FAST"), presets[0]);
+    assert.deepEqual(
+        logic.commandItems(
+            "/preset f", [], "gpt-5.4", ["low"], "low", "detailed", presets
+        ),
+        [{
+            label: "fast",
+            detail: "Current preset — 5.4 Low",
+            draft: "/preset fast",
+            immediate: true
+        }]
+    );
+});
+
+test("preset status requires both model and thinking to match", () => {
+    const presets = [
+        { name: "fast", model: "gpt-5.4", thinking: "low" }
+    ];
+
+    const matching = logic.matchingPresetName(
+        presets, "gpt-5.4", "low"
+    );
+    assert.equal(matching, "fast");
+    assert.equal(
+        logic.modelStatusText("GPT-5.4", "low", matching),
+        "5.4 Low · fast"
+    );
+    assert.equal(
+        logic.matchingPresetName(presets, "gpt-5.4", "medium"),
+        ""
+    );
+    assert.equal(
+        logic.matchingPresetName(presets, "gpt-5.3", "low"),
+        ""
+    );
+});
+
 test("conversationMarkdown preserves assistant Markdown and safely quotes user content", () => {
     const assistant = '## Result\n\n```js\nconsole.log("ok");\n```';
     const markdown = logic.conversationMarkdown("Demo #1", "2026-08-30T12:34:56.000Z", [

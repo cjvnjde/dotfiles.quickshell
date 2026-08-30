@@ -42,6 +42,12 @@ const COMMAND_CATALOG = [
         immediate: false
     },
     {
+        label: "/preset",
+        detail: "Apply a model and thinking preset",
+        draft: "/preset ",
+        immediate: false
+    },
+    {
         label: "/activity",
         detail: "Choose detailed or compact activity",
         draft: "/activity ",
@@ -86,10 +92,46 @@ function conciseModelName(value) {
     return name.replace(/-/g, " ");
 }
 
-function modelStatusText(modelName, effortName) {
+function modelStatusText(modelName, effortName, presetName) {
     const effort = effortName === "" || effortName === "default"
         ? "Auto" : titleCase(effortName);
-    return conciseModelName(modelName) + " " + effort;
+    const preset = String(presetName || "").trim();
+    return conciseModelName(modelName) + " " + effort
+        + (preset.length > 0 ? " · " + preset : "");
+}
+
+function presetByName(presets, name) {
+    const requested = String(name || "").trim().toLowerCase();
+    const configured = Array.isArray(presets) ? presets : [];
+    for (const preset of configured) {
+        if (!preset) {
+            continue;
+        }
+        const presetName = String(preset.name || "").trim();
+        if (presetName.length > 0 && presetName.toLowerCase() === requested) {
+            return preset;
+        }
+    }
+    return null;
+}
+
+function matchingPresetName(presets, modelId, effortName) {
+    const activeModel = String(modelId || "").trim().toLowerCase();
+    const activeEffort = String(effortName || "default").trim().toLowerCase();
+    const configured = Array.isArray(presets) ? presets : [];
+    for (const preset of configured) {
+        if (!preset) {
+            continue;
+        }
+        const name = String(preset.name || "").trim();
+        const model = String(preset.model || "").trim().toLowerCase();
+        const thinking = String(preset.thinking || "").trim().toLowerCase();
+        if (name.length > 0 && model === activeModel
+                && thinking === activeEffort) {
+            return name;
+        }
+    }
+    return "";
 }
 
 function modelById(models, modelId) {
@@ -165,7 +207,7 @@ function removeCommandDraft(draft) {
 }
 
 function commandItems(draft, availableModels, selectedModel,
-        supportedEfforts, selectedEffort, activityMode) {
+        supportedEfforts, selectedEffort, activityMode, presets) {
     const value = String(draft || "").replace(/^\s+/, "");
     const lowered = value.toLowerCase();
     if (lowered.indexOf("/model") === 0
@@ -197,6 +239,38 @@ function commandItems(draft, availableModels, selectedModel,
                 immediate: true
             }));
     }
+    if (lowered.indexOf("/preset") === 0
+            && (lowered.length === 7 || lowered.charAt(7) === " ")) {
+        const query = lowered.slice(7).trim();
+        const activePreset = matchingPresetName(
+            presets, selectedModel, selectedEffort);
+        const configured = Array.isArray(presets) ? presets : [];
+        return configured.filter(preset => {
+            if (!preset) {
+                return false;
+            }
+            const name = String(preset.name || "").trim();
+            const model = String(preset.model || "").trim();
+            const thinking = String(preset.thinking || "").trim();
+            return name.length > 0 && model.length > 0 && thinking.length > 0
+                && (query.length === 0
+                    || name.toLowerCase().indexOf(query) >= 0);
+        }).map(preset => {
+            const name = String(preset.name).trim();
+            const model = String(preset.model).trim();
+            const thinking = String(preset.thinking).trim().toLowerCase();
+            const summary = conciseModelName(model) + " "
+                + (thinking === "default" ? "Auto" : titleCase(thinking));
+            return {
+                label: name,
+                detail: name === activePreset
+                    ? "Current preset — " + summary : summary,
+                draft: "/preset " + name,
+                immediate: true
+            };
+        });
+    }
+
     if (lowered.indexOf("/activity") === 0
             && (lowered.length === 9 || lowered.charAt(9) === " ")) {
         const query = lowered.slice(9).trim();
@@ -918,6 +992,8 @@ if (typeof module !== "undefined") {
         titleCase,
         conciseModelName,
         modelStatusText,
+        presetByName,
+        matchingPresetName,
         modelById,
         modelsFromPayload,
         commandDraft,

@@ -44,9 +44,10 @@ a screen region and attach its untouched PNG to a new prompt. The interface is
 a minimal dark composer that expands into the current conversation. Its header
 opens persisted conversation history and exports the loaded conversation as
 Markdown. Assistant answers render as Markdown, open web and email links
-externally, provide an icon-only whole-answer copy action, and show fenced code
-in separate blocks with their own copy icons. Thinking summaries, shell
-commands, file changes, searches, and other app-server tool items appear as
+externally, provide an icon-only whole-answer copy action only while the answer
+is hovered, and show fenced code in separate blocks with their own copy icons.
+Thinking summaries, shell commands, file changes, searches, and other
+app-server tool items appear as
 live, expandable activity cards in detailed activity mode. Generated regular
 files appear in a compact card strip with a native Save action. The footer
 shows the `sbx` authorization state, active Codex model and thinking level, and
@@ -60,9 +61,10 @@ and preserves the rest of the draft. `/file` hides the chat and opens a
 foreground picker for PNG, JPEG, WebP, and text files. `/ps` captures a screen
 region, `/copy` copies the user and assistant transcript, and `/export` opens a
 native save dialog for an atomic Markdown export. `/history` opens persisted
-Codex threads. `/model` changes the active model, and `/thinking` changes
-reasoning effort. `/activity detailed` shows every thinking and tool card
-retained in the conversation. `/activity compact` shows only the latest
+Codex threads. `/model` changes the active model, `/thinking` changes reasoning
+effort, and `/preset NAME` applies a configured model-and-thinking pair.
+`/activity detailed` shows every thinking and tool card retained in the
+conversation. `/activity compact` shows only the latest
 thinking or tool card while a response is running, then hides activity without
 discarding it; switching back to detailed reveals every card again.
 `/new` starts a clean chat without deleting the previous thread or its
@@ -78,6 +80,20 @@ a message. `Shift+Enter` inserts a newline, and `Escape` hides the overlay
 without stopping an active response. A turn completed while visible sends no
 notification. A turn completed while hidden sends one privacy-safe desktop
 notification whose Open action restores the focused-screen chat and composer.
+
+Define presets in [`AiConfig.qml`](AiConfig.qml) using model IDs and thinking
+levels shown by `/model` and `/thinking`:
+
+```qml
+readonly property var presets: [
+    { name: "fast", model: "gpt-5.4", thinking: "low" },
+    { name: "deep", model: "gpt-5.4", thinking: "high" }
+]
+```
+
+The footer appends a preset name only while both the selected model and thinking
+level exactly match it, including when those values were selected manually.
+Preset configuration stays on the host and is not copied into the sandbox.
 
 The feature owns one dedicated sandbox named `quickshell-ai-chat`, configured
 in [`AiConfig.qml`](AiConfig.qml). It creates that sandbox with `sbx create

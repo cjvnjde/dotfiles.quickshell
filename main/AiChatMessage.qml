@@ -350,8 +350,8 @@ Item {
             width: 32
             height: 28
             visible: answerCopyAvailable
-            opacity: answerCopied || messageHover.containsMouse
-                || answerCopyMouse.containsMouse ? 1 : 0.4
+            opacity: messageHover.containsMouse
+                || answerCopyMouse.containsMouse ? 1 : 0
             z: 2
             radius: 8
             color: answerCopyMouse.containsMouse ? "#2d2d2d" : "#1d1d1d"

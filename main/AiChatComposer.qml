@@ -10,7 +10,8 @@ Item {
     function commandItems(draft) {
         return AiChatLogic.commandItems(draft, controller.availableModels,
             controller.selectedModel, controller.supportedEfforts,
-            controller.selectedEffort, controller.activityMode);
+            controller.selectedEffort, controller.activityMode,
+            controller.presets);
     }
 
     function focusComposer() {
@@ -71,7 +72,9 @@ Item {
                 return;
             }
         }
-        controller.send(composer.text);
+        if (controller.send(composer.text)) {
+            composer.clear();
+        }
     }
 
     Layout.fillWidth: true
@@ -328,7 +331,8 @@ Item {
                     Text {
                         text: AiChatLogic.modelStatusText(
                             controller.selectedModelName,
-                            controller.selectedEffort)
+                            controller.selectedEffort,
+                            controller.activePresetName)
                         color: "#d8d8d8"
                         font.family: Theme.fontFamily
                         font.pixelSize: 12
