@@ -81,14 +81,15 @@ without stopping an active response. A turn completed while visible sends no
 notification. A turn completed while hidden sends one privacy-safe desktop
 notification whose Open action restores the focused-screen chat and composer.
 
-Define presets in [`AiConfig.qml`](AiConfig.qml) using model IDs and thinking
-levels shown by `/model` and `/thinking`:
+Define presets in [`AiPresets.json`](AiPresets.json) using model IDs and
+thinking levels shown by `/model` and `/thinking`:
 
-```qml
-readonly property var presets: [
-    { name: "fast", model: "gpt-5.4", thinking: "low" },
-    { name: "deep", model: "gpt-5.4", thinking: "high" }
-]
+```json
+{
+  "presets": [
+    { "name": "fast", "model": "gpt-5.6-terra", "thinking": "low" }
+  ]
+}
 ```
 
 The footer appends a preset name only while both the selected model and thinking

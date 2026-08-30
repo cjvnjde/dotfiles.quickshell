@@ -21,7 +21,6 @@ QtObject {
     readonly property int sandboxCreateTimeoutMs: 300000
     readonly property bool backendAutoStart: true
     readonly property bool debug: Quickshell.env("QUICKSHELL_AI_DEBUG") === "1"
-    readonly property var presets: []
     readonly property int chatWidth: 760
     readonly property int chatMaxHeight: 980
     readonly property string sandboxWorkingDirectory: sandboxChatKitDirectory

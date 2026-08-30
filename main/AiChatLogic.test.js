@@ -12,6 +12,12 @@ test("preset commands resolve configured names", () => {
     assert.equal(logic.presetByName(presets, "FAST"), presets[0]);
     assert.deepEqual(
         logic.commandItems(
+            "/preset", [], "gpt-5.4", ["low"], "low", "detailed", presets
+        ).map(item => item.label),
+        ["fast", "deep"]
+    );
+    assert.deepEqual(
+        logic.commandItems(
             "/preset f", [], "gpt-5.4", ["low"], "low", "detailed", presets
         ),
         [{

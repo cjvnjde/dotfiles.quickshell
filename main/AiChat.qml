@@ -21,7 +21,11 @@ Scope {
     property string latestActivityItemId: ""
     property var availableModels: []
     property var supportedEfforts: []
-    readonly property var presets: AiConfig.presets
+    readonly property var presets: {
+        const configuration = JSON.parse(presetsFile.text());
+        return configuration && Array.isArray(configuration.presets)
+            ? configuration.presets : [];
+    }
     readonly property string activePresetName: AiChatLogic.matchingPresetName(
         presets, selectedModel, selectedEffort)
     property var pendingRequests: ({})
@@ -1951,6 +1955,13 @@ Scope {
     TextEdit {
         id: clipboardBuffer
         visible: false
+    }
+
+    FileView {
+        id: presetsFile
+
+        path: Quickshell.shellPath("AiPresets.json")
+        blockLoading: true
     }
 
     FileView {
