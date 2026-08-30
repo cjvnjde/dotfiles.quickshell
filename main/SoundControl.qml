@@ -179,6 +179,14 @@ Rectangle {
         }
 
         Text {
+            visible: root.inputAvailable && root.inputMuted
+            text: "󰍭"
+            color: Theme.red
+            font.family: Theme.fontFamily
+            font.pixelSize: Theme.fontSize + 2
+        }
+
+        Text {
             anchors.verticalCenter: parent.verticalCenter
             text: root.outputAvailable ? Math.round(root.outputVolume * 100) + "%" : "N/A"
             color: Theme.text
