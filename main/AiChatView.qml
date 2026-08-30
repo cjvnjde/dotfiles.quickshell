@@ -204,6 +204,75 @@ Variants {
                     boundsBehavior: Flickable.StopAtBounds
                     property bool followNewest: true
 
+                    function boundedContentY(value) {
+                        const minimum = originY;
+                        const maximum = minimum
+                            + Math.max(0, contentHeight - height);
+                        return Math.max(minimum, Math.min(maximum, value));
+                    }
+
+                    function scrollWheel(event) {
+                        const preciseDelta = event.pixelDelta.y;
+                        const distance = preciseDelta !== 0
+                            ? preciseDelta * 1.6
+                            : event.angleDelta.y / 120 * 150;
+                        if (distance === 0) {
+                            return;
+                        }
+
+                        const direction = Math.sign(distance);
+                        const previousDestination = wheelScroll.running
+                                && wheelDirection === direction
+                            ? wheelDestination : contentY;
+                        wheelScroll.stop();
+                        followNewest = false;
+                        if (preciseDelta !== 0) {
+                            contentY = boundedContentY(contentY - distance);
+                            followNewest = atYEnd;
+                        } else {
+                            wheelDestination = boundedContentY(
+                                previousDestination - distance);
+                            wheelDirection = direction;
+                            const remainingDistance = Math.abs(
+                                wheelDestination - contentY);
+                            if (remainingDistance < 0.5) {
+                                contentY = wheelDestination;
+                                wheelDirection = 0;
+                                followNewest = atYEnd;
+                            } else {
+                                wheelScroll.from = contentY;
+                                wheelScroll.to = wheelDestination;
+                                wheelScroll.duration = Math.max(45, Math.min(
+                                    110, 110 * remainingDistance / 150));
+                                wheelScroll.restart();
+                            }
+                        }
+                        event.accepted = true;
+                    }
+
+                    property real wheelDestination: contentY
+                    property int wheelDirection: 0
+
+                    NumberAnimation {
+                        id: wheelScroll
+                        target: messageList
+                        property: "contentY"
+                        duration: 110
+                        easing.type: Easing.OutCubic
+                        onStopped: {
+                            messageList.wheelDestination = messageList.contentY;
+                            messageList.wheelDirection = 0;
+                            messageList.followNewest = messageList.atYEnd;
+                        }
+                    }
+
+                    WheelHandler {
+                        target: null
+                        acceptedDevices: PointerDevice.Mouse
+                            | PointerDevice.TouchPad
+                        onWheel: event => messageList.scrollWheel(event)
+                    }
+
                     onContentHeightChanged: {
                         if (followNewest) {
                             Qt.callLater(() => {

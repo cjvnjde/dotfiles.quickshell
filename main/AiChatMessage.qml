@@ -32,6 +32,45 @@ Item {
         && body.length > 0
         && AiChatLogic.isAssistantResponseTail(controller.messages, index)
     readonly property real topSpacing: activityVisible && index > 0 ? 24 : 0
+
+    function syncAssistantBlocks() {
+        if (role !== "assistant" || body.length === 0) {
+            assistantBlockModel.clear();
+            return;
+        }
+
+        const blocks = AiChatLogic.markdownBlocks(body);
+        for (let blockIndex = 0; blockIndex < blocks.length; blockIndex++) {
+            const block = blocks[blockIndex];
+            if (blockIndex >= assistantBlockModel.count) {
+                assistantBlockModel.append(block);
+                continue;
+            }
+
+            const currentBlock = assistantBlockModel.get(blockIndex);
+            if (currentBlock.kind !== block.kind) {
+                assistantBlockModel.setProperty(blockIndex, "kind", block.kind);
+            }
+            if (currentBlock.language !== block.language) {
+                assistantBlockModel.setProperty(
+                    blockIndex, "language", block.language);
+            }
+            if (currentBlock.text !== block.text) {
+                assistantBlockModel.setProperty(blockIndex, "text", block.text);
+            }
+        }
+        while (assistantBlockModel.count > blocks.length) {
+            assistantBlockModel.remove(assistantBlockModel.count - 1);
+        }
+    }
+
+    onBodyChanged: syncAssistantBlocks()
+    onRoleChanged: syncAssistantBlocks()
+    Component.onCompleted: syncAssistantBlocks()
+
+    ListModel {
+        id: assistantBlockModel
+    }
     visible: activityVisible
     implicitHeight: activityVisible
         ? messageBubble.implicitHeight + topSpacing : 0
@@ -211,39 +250,20 @@ Item {
                 }
             }
 
-            TextEdit {
-                Layout.fillWidth: true
-                Layout.preferredHeight: visible ? contentHeight : 0
-                visible: role === "assistant"
-                    && messageStatus === "streaming"
-                    && body.length > 0
-                text: AiChatLogic.safeAssistantMarkdown(body)
-                textFormat: Text.MarkdownText
-                wrapMode: Text.Wrap
-                color: "#eeeeee"
-                selectionColor: "#515151"
-                selectedTextColor: "#ffffff"
-                font.family: Theme.fontFamily
-                font.pixelSize: 15
-                readOnly: true
-                selectByMouse: true
-                onLinkActivated: link => controller.openLink(link)
-            }
-
             ColumnLayout {
                 Layout.fillWidth: true
                 Layout.preferredHeight: visible ? implicitHeight : 0
-                visible: role === "assistant"
-                    && messageStatus !== "streaming"
-                    && body.length > 0
+                visible: role === "assistant" && body.length > 0
                 spacing: 10
 
                 Repeater {
-                    model: messageStatus === "streaming"
-                        ? [] : AiChatLogic.markdownBlocks(body)
+                    model: assistantBlockModel
 
                     ColumnLayout {
-                        required property var modelData
+                        id: markdownBlock
+                        required property string kind
+                        required property string language
+                        required property string text
                         Layout.fillWidth: true
                         spacing: 0
 
@@ -251,9 +271,10 @@ Item {
                             Layout.fillWidth: true
                             Layout.preferredHeight: visible
                                 ? contentHeight : 0
-                            visible: modelData.kind === "markdown"
-                                && modelData.text.length > 0
-                            text: AiChatLogic.safeAssistantMarkdown(modelData.text)
+                            visible: markdownBlock.kind === "markdown"
+                                && markdownBlock.text.length > 0
+                            text: AiChatLogic.safeAssistantMarkdown(
+                                markdownBlock.text)
                             textFormat: Text.MarkdownText
                             wrapMode: Text.Wrap
                             color: "#eeeeee"
@@ -273,7 +294,7 @@ Item {
                             Layout.fillWidth: true
                             Layout.preferredHeight: visible
                                 ? codeLayout.implicitHeight + 20 : 0
-                            visible: modelData.kind === "code"
+                            visible: markdownBlock.kind === "code"
                             radius: 10
                             color: "#111111"
                             border.width: 1
@@ -299,8 +320,8 @@ Item {
                                     Layout.fillWidth: true
                                     Layout.preferredHeight: 28
                                     Layout.rightMargin: 38
-                                    text: modelData.language.length > 0
-                                        ? modelData.language : "code"
+                                    text: markdownBlock.language.length > 0
+                                        ? markdownBlock.language : "code"
                                     color: "#858585"
                                     verticalAlignment: Text.AlignVCenter
                                     elide: Text.ElideRight
@@ -311,7 +332,7 @@ Item {
                                 TextEdit {
                                     Layout.fillWidth: true
                                     Layout.preferredHeight: contentHeight
-                                    text: modelData.text
+                                    text: markdownBlock.text
                                     textFormat: Text.PlainText
                                     wrapMode: TextEdit.WrapAnywhere
                                     color: "#d8d8d8"
@@ -383,7 +404,8 @@ Item {
                                     hoverEnabled: true
                                     cursorShape: Qt.PointingHandCursor
                                     onClicked: {
-                                        if (controller.copyText(modelData.text)) {
+                                        if (controller.copyText(
+                                                markdownBlock.text)) {
                                             codeBlock.copied = true;
                                             codeCopyReset.restart();
                                         }

@@ -72,6 +72,46 @@ test("conversationMarkdown preserves assistant Markdown and safely quotes user c
     assert.doesNotMatch(markdown, /transient|\/home\/private/);
 });
 
+test("markdownBlocks exposes incomplete fenced code while a response streams", () => {
+    assert.deepEqual(
+        logic.markdownBlocks("Intro **now**.\n\n```js\nconst answer = 42;"),
+        [
+            {
+                kind: "markdown",
+                language: "",
+                text: "Intro **now**.\n"
+            },
+            {
+                kind: "code",
+                language: "js",
+                text: "const answer = 42;"
+            }
+        ]
+    );
+    assert.deepEqual(
+        logic.markdownBlocks(
+            "Intro **now**.\n\n```js\nconst answer = 42;\n```\nDone."
+        ),
+        [
+            {
+                kind: "markdown",
+                language: "",
+                text: "Intro **now**.\n"
+            },
+            {
+                kind: "code",
+                language: "js",
+                text: "const answer = 42;"
+            },
+            {
+                kind: "markdown",
+                language: "",
+                text: "Done."
+            }
+        ]
+    );
+});
+
 test("messagesFromTurns hydrates attachments and terminal turn states", () => {
     const imageMetadata = logic.attachmentMetadataInput(
         "image",
