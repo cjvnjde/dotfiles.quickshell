@@ -227,12 +227,7 @@ Rectangle {
                 visible: root.wifiDevice !== null && Networking.wifiEnabled
                 clip: true
                 spacing: 4
-                model: ScriptModel {
-                    values: root.wifiDevice
-                        ? root.wifiDevice.networks.values.slice().sort((left, right) => right.signalStrength - left.signalStrength)
-                        : []
-                    objectProp: "name"
-                }
+                model: root.wifiDevice ? root.wifiDevice.networks : null
 
                 delegate: Rectangle {
                     required property var modelData
