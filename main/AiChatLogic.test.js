@@ -96,6 +96,27 @@ test("messagesFromTurns represents an in-progress turn without eager duplication
     assert.equal(first[0].itemId, "turn:active");
 });
 
+test("assistant responses expose one tail action and copy every answer part", () => {
+    const messages = [
+        { role: "assistant", turnId: "turn-a", body: "First part" },
+        { role: "activity", turnId: "turn-a", body: "Thinking" },
+        { role: "assistant", turnId: "turn-a", body: "Second part" },
+        { role: "assistant", turnId: "turn-b", body: "Another response" }
+    ];
+
+    assert.equal(
+        logic.assistantResponseBody(messages, 0),
+        "First part\n\nSecond part"
+    );
+    assert.equal(
+        logic.assistantResponseBody(messages, 2),
+        "First part\n\nSecond part"
+    );
+    assert.equal(logic.isAssistantResponseTail(messages, 0), false);
+    assert.equal(logic.isAssistantResponseTail(messages, 2), true);
+    assert.equal(logic.isAssistantResponseTail(messages, 3), true);
+});
+
 test("sanitizedExportFilename retains the Markdown extension", () => {
     assert.equal(
         logic.sanitizedExportFilename("../Quarter: report?", "2026-08-30T00:00:00Z"),

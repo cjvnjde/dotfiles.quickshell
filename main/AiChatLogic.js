@@ -570,6 +570,64 @@ function messagesFromTurns(turns, threadId) {
     return messages;
 }
 
+function messageCount(messages) {
+    if (!messages) {
+        return 0;
+    }
+    const count = Number(messages.count);
+    return Number.isFinite(count) ? count : messages.length || 0;
+}
+
+function messageAt(messages, index) {
+    return typeof messages.get === "function"
+        ? messages.get(index) : messages[index];
+}
+
+function assistantResponseBody(messages, messageIndex) {
+    const selected = messageAt(messages, messageIndex);
+    if (!selected || selected.role !== "assistant") {
+        return "";
+    }
+    const turnId = String(selected.turnId || "");
+    if (turnId.length === 0) {
+        return String(selected.body || "");
+    }
+
+    const parts = [];
+    for (let index = 0; index < messageCount(messages); index++) {
+        const message = messageAt(messages, index);
+        if (!message || message.role !== "assistant"
+                || String(message.turnId || "") !== turnId) {
+            continue;
+        }
+        const body = String(message.body || "");
+        if (body.trim().length > 0) {
+            parts.push(body);
+        }
+    }
+    return parts.join("\n\n");
+}
+
+function isAssistantResponseTail(messages, messageIndex) {
+    const selected = messageAt(messages, messageIndex);
+    if (!selected || selected.role !== "assistant") {
+        return false;
+    }
+    const turnId = String(selected.turnId || "");
+    if (turnId.length === 0) {
+        return true;
+    }
+
+    for (let index = messageIndex + 1; index < messageCount(messages); index++) {
+        const message = messageAt(messages, index);
+        if (message && message.role === "assistant"
+                && String(message.turnId || "") === turnId) {
+            return false;
+        }
+    }
+    return true;
+}
+
 function escapeMarkdownLiteral(value) {
     return String(value || "")
         .replace(/\\/g, "\\\\")
@@ -873,6 +931,8 @@ if (typeof module !== "undefined") {
         attachmentMetadataInput,
         attachmentFromMetadataInput,
         messagesFromTurns,
+        assistantResponseBody,
+        isAssistantResponseTail,
         conversationMarkdown,
         sanitizedExportFilename,
         threadTitle,

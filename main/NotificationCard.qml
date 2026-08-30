@@ -10,6 +10,35 @@ Rectangle {
 
     readonly property bool critical: notification.urgency === NotificationUrgency.Critical
     readonly property color frameColor: critical ? Theme.peach : Theme.blue
+    readonly property var buttonActions: {
+        const actions = [];
+        for (let index = 0; index < notification.actions.length; index++) {
+            const action = notification.actions[index];
+            if (action.identifier === "default"
+                    || String(action.text || "").trim().length === 0) {
+                continue;
+            }
+            actions.push(action);
+        }
+        return actions;
+    }
+    readonly property var defaultAction: {
+        for (let index = 0; index < notification.actions.length; index++) {
+            const action = notification.actions[index];
+            if (action.identifier === "default") {
+                return action;
+            }
+        }
+        return null;
+    }
+
+    function invokeAction(action) {
+        const resident = notification.resident;
+        action.invoke();
+        if (resident) {
+            notification.dismiss();
+        }
+    }
 
     implicitHeight: Math.min(contentLayout.implicitHeight + 16, 300)
     radius: 4
@@ -72,11 +101,11 @@ Rectangle {
 
         RowLayout {
             Layout.alignment: Qt.AlignRight
-            visible: notification.actions.length > 0
+            visible: root.buttonActions.length > 0
             spacing: 6
 
             Repeater {
-                model: notification.actions
+                model: root.buttonActions
 
                 Rectangle {
                     required property var modelData
@@ -102,13 +131,7 @@ Rectangle {
                         id: actionMouse
                         anchors.fill: parent
                         hoverEnabled: true
-                        onClicked: {
-                            const resident = root.notification.resident;
-                            modelData.invoke();
-                            if (resident) {
-                                root.notification.dismiss();
-                            }
-                        }
+                        onClicked: root.invokeAction(modelData)
                     }
                 }
             }
@@ -127,15 +150,15 @@ Rectangle {
             }
 
             if (mouse.button === Qt.MiddleButton
-                    && notification.actions.length > 0) {
-                const resident = root.notification.resident;
-                root.notification.actions[0].invoke();
-                if (resident) {
-                    root.notification.dismiss();
-                }
+                    && root.buttonActions.length > 0) {
+                root.invokeAction(root.buttonActions[0]);
                 return;
             }
 
+            if (root.defaultAction !== null) {
+                root.invokeAction(root.defaultAction);
+                return;
+            }
             notification.dismiss();
         }
     }

@@ -27,6 +27,10 @@ Item {
         || controller.activityMode === "detailed"
         || (controller.isGenerating && turnId === controller.currentTurnId
             && itemId === controller.latestActivityItemId)
+    readonly property bool answerCopyAvailable: role === "assistant"
+        && messageStatus !== "streaming"
+        && body.length > 0
+        && AiChatLogic.isAssistantResponseTail(controller.messages, index)
     readonly property real topSpacing: activityVisible && index > 0 ? 24 : 0
     visible: activityVisible
     implicitHeight: activityVisible
@@ -263,9 +267,6 @@ Item {
                         }
 
                         Rectangle {
-                            id: codeBlock
-                            property bool copied: false
-
                             Layout.fillWidth: true
                             Layout.preferredHeight: visible
                                 ? codeLayout.implicitHeight + 20 : 0
@@ -274,12 +275,6 @@ Item {
                             color: "#111111"
                             border.width: 1
                             border.color: "#343434"
-
-                            Timer {
-                                id: codeCopyReset
-                                interval: 1400
-                                onTriggered: codeBlock.copied = false
-                            }
 
                             ColumnLayout {
                                 id: codeLayout
@@ -291,67 +286,13 @@ Item {
                                 }
                                 spacing: 8
 
-                                RowLayout {
+                                Text {
                                     Layout.fillWidth: true
-
-                                    Text {
-                                        Layout.fillWidth: true
-                                        text: modelData.language.length > 0
-                                            ? modelData.language : "code"
-                                        color: "#858585"
-                                        font.family: Theme.fontFamily
-                                        font.pixelSize: 11
-                                    }
-
-                                    Rectangle {
-                                        Layout.preferredWidth: 30
-                                        Layout.preferredHeight: 26
-                                        radius: 7
-                                        color: codeCopyMouse.containsMouse
-                                            ? "#343434" : "#242424"
-
-                                        Item {
-                                            anchors.centerIn: parent
-                                            width: 15
-                                            height: 15
-
-                                            Rectangle {
-                                                x: 4
-                                                width: 10
-                                                height: 10
-                                                radius: 1
-                                                color: "transparent"
-                                                border.width: 1
-                                                border.color: codeBlock.copied
-                                                    ? Theme.green : "#b5b5b5"
-                                            }
-
-                                            Rectangle {
-                                                y: 4
-                                                width: 10
-                                                height: 10
-                                                radius: 1
-                                                color: codeCopyMouse.containsMouse
-                                                    ? "#343434" : "#242424"
-                                                border.width: 1
-                                                border.color: codeBlock.copied
-                                                    ? Theme.green : "#b5b5b5"
-                                            }
-                                        }
-
-                                        MouseArea {
-                                            id: codeCopyMouse
-                                            anchors.fill: parent
-                                            hoverEnabled: true
-                                            cursorShape: Qt.PointingHandCursor
-                                            onClicked: {
-                                                if (controller.copyText(modelData.text)) {
-                                                    codeBlock.copied = true;
-                                                    codeCopyReset.restart();
-                                                }
-                                            }
-                                        }
-                                    }
+                                    text: modelData.language.length > 0
+                                        ? modelData.language : "code"
+                                    color: "#858585"
+                                    font.family: Theme.fontFamily
+                                    font.pixelSize: 11
                                 }
 
                                 TextEdit {
@@ -373,62 +314,6 @@ Item {
                     }
                 }
 
-                RowLayout {
-                    Layout.fillWidth: true
-                    Layout.preferredHeight: 28
-
-                    Item { Layout.fillWidth: true }
-
-                    Rectangle {
-                        Layout.preferredWidth: 32
-                        Layout.preferredHeight: 28
-                        radius: 8
-                        color: answerCopyMouse.containsMouse
-                            ? "#2d2d2d" : "transparent"
-
-                        Item {
-                            anchors.centerIn: parent
-                            width: 15
-                            height: 15
-
-                            Rectangle {
-                                x: 4
-                                width: 10
-                                height: 10
-                                radius: 1
-                                color: "transparent"
-                                border.width: 1
-                                border.color: answerCopied
-                                    ? Theme.green : "#9b9b9b"
-                            }
-
-                            Rectangle {
-                                y: 4
-                                width: 10
-                                height: 10
-                                radius: 1
-                                color: answerCopyMouse.containsMouse
-                                    ? "#2d2d2d" : "#171717"
-                                border.width: 1
-                                border.color: answerCopied
-                                    ? Theme.green : "#9b9b9b"
-                            }
-                        }
-
-                        MouseArea {
-                            id: answerCopyMouse
-                            anchors.fill: parent
-                            hoverEnabled: true
-                            cursorShape: Qt.PointingHandCursor
-                            onClicked: {
-                                if (controller.copyText(body)) {
-                                    answerCopied = true;
-                                    answerCopyReset.restart();
-                                }
-                            }
-                        }
-                    }
-                }
             }
 
             Text {
@@ -445,6 +330,75 @@ Item {
                 font.family: Theme.fontFamily
                 font.pixelSize: 13
                 wrapMode: Text.Wrap
+            }
+        }
+
+        MouseArea {
+            id: messageHover
+            anchors.fill: parent
+            enabled: answerCopyAvailable
+            acceptedButtons: Qt.NoButton
+            hoverEnabled: true
+        }
+
+        Rectangle {
+            id: answerCopyButton
+            anchors {
+                right: parent.right
+                bottom: parent.bottom
+            }
+            width: 32
+            height: 28
+            visible: answerCopyAvailable
+            opacity: answerCopied || messageHover.containsMouse
+                || answerCopyMouse.containsMouse ? 1 : 0.4
+            z: 2
+            radius: 8
+            color: answerCopyMouse.containsMouse ? "#2d2d2d" : "#1d1d1d"
+
+            Behavior on opacity {
+                NumberAnimation { duration: 100 }
+            }
+
+            Item {
+                anchors.centerIn: parent
+                width: 15
+                height: 15
+
+                Rectangle {
+                    x: 4
+                    width: 10
+                    height: 10
+                    radius: 1
+                    color: "transparent"
+                    border.width: 1
+                    border.color: answerCopied ? Theme.green : "#8b8b8b"
+                }
+
+                Rectangle {
+                    y: 4
+                    width: 10
+                    height: 10
+                    radius: 1
+                    color: answerCopyMouse.containsMouse ? "#2d2d2d" : "#1d1d1d"
+                    border.width: 1
+                    border.color: answerCopied ? Theme.green : "#8b8b8b"
+                }
+            }
+
+            MouseArea {
+                id: answerCopyMouse
+                anchors.fill: parent
+                hoverEnabled: true
+                cursorShape: Qt.PointingHandCursor
+                onClicked: {
+                    const response = AiChatLogic.assistantResponseBody(
+                        controller.messages, index);
+                    if (controller.copyText(response)) {
+                        answerCopied = true;
+                        answerCopyReset.restart();
+                    }
+                }
             }
         }
     }
