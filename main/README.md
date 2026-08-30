@@ -41,49 +41,57 @@ The picker can also be controlled through
 
 Press `Super+A` to open a compact AI chat overlay, or `Super+Shift+A` to select
 a screen region and attach its untouched PNG to a new prompt. The interface is
-a minimal dark composer that expands into the current conversation. Assistant
-answers render as Markdown, open web and email links externally, provide an
-icon-only whole-answer copy action, and show fenced code in separate blocks
-with their own copy icons. Thinking summaries, shell commands, file changes,
-searches, and other app-server tool items appear as live, expandable activity
-cards in detailed activity mode. The footer
+a minimal dark composer that expands into the current conversation. Its header
+opens persisted conversation history and exports the loaded conversation as
+Markdown. Assistant answers render as Markdown, open web and email links
+externally, provide an icon-only whole-answer copy action, and show fenced code
+in separate blocks with their own copy icons. Thinking summaries, shell
+commands, file changes, searches, and other app-server tool items appear as
+live, expandable activity cards in detailed activity mode. Generated regular
+files appear in a compact card strip with a native Save action. The footer
 shows the `sbx` authorization state, active Codex model and thinking level, and
 a compact circular send button that becomes a stop button while a response is
-streaming. Pasting while the composer is focused attaches a
-clipboard image without interfering with normal text paste.
+streaming. Pasting while the composer is focused attaches a clipboard image
+without interfering with normal text paste.
 
 Type `/` at the start of the composer or after existing draft text to open the
 command palette. Selecting an inline command removes only that command fragment
 and preserves the rest of the draft. `/file` hides the chat and opens a
 foreground picker for PNG, JPEG, WebP, and text files. `/ps` captures a screen
-region, `/copy` copies the user and assistant transcript, `/model` changes the
-active model, and `/thinking` changes reasoning effort. `/activity detailed`
-shows every thinking and tool card retained in the conversation. `/activity
-compact` shows only the latest thinking or tool card while a response is
-running, then hides activity without discarding it; switching back to detailed
-reveals every card again.
-`/new` starts a clean chat. `/reconnect` reloads the chat-only kit and
-app-server. `/update` updates
-Codex inside the existing sandbox, then reconnects. `/rebuild` deletes and
-recreates the dedicated sandbox, updates Codex, reloads the kit, and starts a
-new chat. Model and thinking choices come from app-server's `model/list`
-response and are applied to subsequent turns. `Tab` completes the highlighted
-command without executing it. `Enter` executes a complete command immediately,
-accepts a highlighted partial command, or sends a message. `Shift+Enter`
-inserts a newline, and `Escape` hides the overlay without stopping an active
-response.
-The current in-memory conversation is preserved while the overlay is hidden.
+region, `/copy` copies the user and assistant transcript, and `/export` opens a
+native save dialog for an atomic Markdown export. `/history` opens persisted
+Codex threads. `/model` changes the active model, and `/thinking` changes
+reasoning effort. `/activity detailed` shows every thinking and tool card
+retained in the conversation. `/activity compact` shows only the latest
+thinking or tool card while a response is running, then hides activity without
+discarding it; switching back to detailed reveals every card again.
+`/new` starts a clean chat without deleting the previous thread or its
+generated files. `/reconnect` reloads the chat-only kit and app-server.
+`/update` updates Codex inside the existing sandbox, then reconnects without
+removing history or generated files. `/rebuild` first warns that it will delete
+all sandbox threads and managed outputs; run it a second time within 30 seconds
+to perform the destructive rebuild. Model and thinking choices come from
+app-server's `model/list` response and are applied to subsequent turns. `Tab`
+completes the highlighted command without executing it. `Enter` executes a
+complete command immediately, accepts a highlighted partial command, or sends
+a message. `Shift+Enter` inserts a newline, and `Escape` hides the overlay
+without stopping an active response. A turn completed while visible sends no
+notification. A turn completed while hidden sends one privacy-safe desktop
+notification whose Open action restores the focused-screen chat and composer.
 
 The feature owns one dedicated sandbox named `quickshell-ai-chat`, configured
 in [`AiConfig.qml`](AiConfig.qml). It creates that sandbox with `sbx create
-codex` and an otherwise empty private workspace below Quickshell's state
-directory. It never attaches the user's home or a project. New Chat deletes the
-previous Codex thread through app-server while keeping the sandbox and
-app-server connection alive, so the next message can start immediately.
-The embedded app-server disables Codex's startup update prompt. Codex therefore
-changes only when `/update` is run. That update remains in the current
-container; recreating the sandbox restores the bundled version before
-`/rebuild` immediately updates it again.
+codex` and a mode-`0700` private workspace below Quickshell's state directory.
+It never attaches the user's home or a project. Conversation history is the
+app-server's persisted thread store; the client neither mirrors nor rewrites
+transcripts. History queries require the exact chat working directory and only
+source kinds emitted by Codex app-server, so unrelated Codex threads cannot
+appear. New Chat interrupts an active turn when needed, clears only the loaded
+view, and leaves the previous thread available in History. The embedded
+app-server disables Codex's startup update prompt. Codex therefore changes only
+when `/update` is run. That update remains
+in the current container; recreating the sandbox restores the bundled version
+before `/rebuild` immediately updates it again.
 Credentials remain managed by Docker Sandboxes and are not copied into the
 Quickshell process or private workspace. Confirm Codex access with:
 
@@ -92,7 +100,8 @@ sbx run codex
 ```
 
 The host needs the official Arch packages `quickshell`, `grim`, `slurp`,
-`wl-clipboard`, `file`, and `zenity`, plus Docker Sandboxes (`sbx`).
+`wl-clipboard`, `file`, `zenity`, `libnotify`, and `python`, plus Docker
+Sandboxes (`sbx`).
 The bundled `AiSbx.sh` launcher resolves the official
 `~/.docker/sbx/bin/sbx` installation first, then `~/.local/bin/sbx`, then the
 inherited `PATH`. Set `QUICKSHELL_SBX_EXECUTABLE` to an absolute executable
@@ -104,6 +113,7 @@ sbx ls
 sbx exec quickshell-ai-chat sh -lc 'codex --version'
 sbx exec quickshell-ai-chat sh -lc 'codex app-server --help'
 ```
+
 Sandbox checks stop after 20 seconds, workspace preparation after 15 seconds,
 and first-time sandbox creation after five minutes. A timeout stops the stuck
 `sbx` process and shows a recovery command; resolve sign-in, daemon, network,
@@ -115,7 +125,8 @@ or filesystem problems in a terminal, then run `/reconnect`.
 `quickshell-ai-chat` sandbox. Quickshell replaces
 `$HOME/quickshell-ai-chat-kit` from that folder before every app-server start
 and uses it as Codex's working directory. `AiChatKit/AGENTS.md` supplies the
-always-on custom instructions. Add chat-only skills as
+always-on custom instructions, including the managed final-output path
+`/home/agent/quickshell-ai-outputs`. Add chat-only skills as
 `AiChatKit/.agents/skills/<skill-name>/SKILL.md`; supporting scripts,
 references, and assets can stay beside each `SKILL.md`.
 
@@ -126,12 +137,13 @@ remain durable in the Quickshell configuration.
 
 ### Sandbox maintenance
 
-`/update` preserves the current sandbox and conversation while updating Codex,
-then reloads the kit and resumes the app-server. `/rebuild` is destructive: it
-clears the in-memory chat, removes the dedicated sandbox and its container-only
-state, recreates it from the Codex base, updates Codex, and reloads the
-chat-only kit. The private host workspace remains empty and is reset before
-creation.
+`/update` preserves the current sandbox, app-server threads, and generated
+files while updating Codex, then reloads the kit and resumes the selected
+thread without appending stale local messages. `/rebuild` is destructive: after
+the second confirmation command, it clears the loaded chat, removes the
+dedicated sandbox and its thread store, resets the private host workspace and
+managed outputs, recreates the sandbox, updates Codex, and reloads the
+chat-only kit.
 
 Available IPC calls are:
 
@@ -141,7 +153,15 @@ qs -c main ipc call ai open
 qs -c main ipc call ai close
 qs -c main ipc call ai screenshot
 qs -c main ipc call ai newChat
+qs -c main ipc call ai history
+qs -c main ipc call ai exportChat
 ```
+
+The export and artifact helpers return completion, cancellation, and failure
+through token-checked `ai` IPC callbacks. Those callbacks are internal to the
+helpers; cancellation changes neither the loaded chat nor its existing error
+state. Conversation export staging stays below the private user runtime
+directory and is unlinked before the save dialog opens.
 
 Set `QUICKSHELL_AI_DEBUG=1` to log sanitized lifecycle diagnostics. Prompt
 text, response bodies, attachment contents, credentials, and complete account
@@ -155,12 +175,12 @@ disables Codex's nested sandbox only; it does not disable Docker Sandboxes
 isolation.
 
 The Docker sandbox is the host security boundary. This feature mounts only its
-dedicated, mode-`0700` empty workspace below Quickshell's state directory; that
-workspace is reset before sandbox creation. It does not mount the user's home
-or a project. The chat kit is explicitly copied into the container before
-Codex starts. The only other host content transferred is a screenshot,
-clipboard image, or filesystem image or text file explicitly selected by the
-user.
+dedicated mode-`0700` workspace below Quickshell's state directory; that
+workspace contains only managed generated outputs and is reset before sandbox
+creation. It does not mount the user's home or a project. The chat kit is
+explicitly copied into the container before Codex starts. The only other host
+content transferred is a screenshot, clipboard image, or filesystem image or
+text file explicitly selected by the user.
 
 Screenshot callbacks accept only helper-style PNG names. Clipboard and picker
 imports are copied first to private helper-style attachment names. Imported
@@ -172,6 +192,18 @@ original picker file is never modified or removed. Sandbox copies are removed
 after turn completion. Managed host copies remain only while displayed, are
 removed by New Chat, and abandoned copies are removed on the next Quickshell
 start.
+
+Final generated files live below `outputs/<thread-id>` in the private mounted
+workspace. Before a turn, Quickshell points the stable sandbox path
+`/home/agent/quickshell-ai-outputs` at only that thread's directory. Discovery
+walks the host-visible managed directory without following symlinks and offers
+only individual regular files up to 100 MiB; devices, sockets, FIFOs,
+out-of-root paths, symlinks, and oversized files never receive Save cards.
+Saving reopens the source with no-follow directory traversal and atomically
+replaces the user-selected destination, preserving source bytes and leaving
+the managed source intact. New Chat retains outputs. A successful explicit
+thread deletion removes that thread's output directory; `/rebuild` removes all
+managed outputs with the sandbox history.
 
 OAuth uses Docker's credential proxy; the raw subscription token remains
 host-side. The app-server necessarily communicates with the Codex service, so

@@ -17,6 +17,7 @@ Rectangle {
         ? (attachmentKind === "image" ? 108 : 220)
         : Math.min(300, availableWidth)
     Layout.preferredHeight: attachmentKind === "image"
+            && (pending || hostPath.length > 0)
         ? (pending ? 68 : 150) : 48
     radius: pending ? 10 : 12
     color: pending ? "#1c1c1c" : "#202020"
@@ -25,6 +26,7 @@ Rectangle {
     Image {
         anchors { fill: parent; margins: attachment.pending ? 3 : 0 }
         visible: attachment.attachmentKind === "image"
+            && attachment.hostPath.length > 0
         source: visible ? "file://" + attachment.hostPath : ""
         fillMode: Image.PreserveAspectFit
         asynchronous: !attachment.pending
@@ -38,8 +40,10 @@ Rectangle {
             topMargin: attachment.pending ? 8 : 10
             bottomMargin: attachment.pending ? 8 : 10
         }
-        visible: attachment.attachmentKind === "text"
         spacing: attachment.pending ? 9 : 10
+        visible: attachment.attachmentKind === "text"
+            || (attachment.attachmentKind === "image"
+                && attachment.hostPath.length === 0)
 
         Rectangle {
             Layout.preferredWidth: 28
@@ -49,7 +53,7 @@ Rectangle {
 
             Text {
                 anchors.centerIn: parent
-                text: "TXT"
+                text: attachment.attachmentKind === "image" ? "IMG" : "TXT"
                 color: "#cfcfcf"
                 font.family: Theme.fontFamily
                 font.pixelSize: 8

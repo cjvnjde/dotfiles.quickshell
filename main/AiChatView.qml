@@ -9,6 +9,35 @@ Variants {
 
     required property var controller
 
+    component HeaderButton: Rectangle {
+        property string label: ""
+        signal clicked()
+
+        implicitWidth: buttonText.implicitWidth + 16
+        implicitHeight: 30
+        radius: 9
+        color: buttonMouse.containsMouse && enabled ? "#303030" : "transparent"
+        opacity: enabled ? 1 : 0.35
+
+        Text {
+            id: buttonText
+            anchors.centerIn: parent
+            text: parent.label
+            color: "#b8b8b8"
+            font.family: Theme.fontFamily
+            font.pixelSize: 11
+            font.weight: Font.DemiBold
+        }
+
+        MouseArea {
+            id: buttonMouse
+            anchors.fill: parent
+            enabled: parent.enabled
+            hoverEnabled: true
+            onClicked: parent.clicked()
+        }
+    }
+
     model: Quickshell.screens
 
     PanelWindow {
@@ -30,20 +59,21 @@ Variants {
         WlrLayershell.keyboardFocus: WlrKeyboardFocus.Exclusive
 
         onVisibleChanged: {
-            if (visible) {
+            if (visible && !view.controller.historyVisible) {
                 Qt.callLater(() => composerPanel.focusComposer());
             }
         }
 
         Shortcut {
             sequence: "Escape"
-            onActivated: view.controller.close()
+            onActivated: view.controller.historyVisible
+                ? view.controller.closeHistory() : view.controller.close()
         }
 
         Connections {
             target: view.controller
             function onFocusComposer() {
-                if (chatWindow.visible) {
+                if (chatWindow.visible && !view.controller.historyVisible) {
                     Qt.callLater(() => composerPanel.focusComposer());
                 }
             }
@@ -59,11 +89,13 @@ Variants {
 
             anchors.centerIn: parent
             width: Math.min(AiConfig.chatWidth, parent.width - 48)
-            height: view.controller.conversationStarted
+            readonly property bool expanded: view.controller.conversationStarted
+                || view.controller.historyVisible
+            height: expanded
                 ? Math.min(AiConfig.chatMaxHeight, parent.height * 0.86)
-                : Math.min(Math.max(164, composerPanel.implicitHeight),
+                : Math.min(Math.max(216, composerPanel.implicitHeight + 52),
                     parent.height - 32)
-            radius: view.controller.conversationStarted ? 24 : 30
+            radius: expanded ? 24 : 30
             color: "#171717"
             border.width: 1
             border.color: "#3d3d3d"
@@ -84,13 +116,16 @@ Variants {
 
                 Item {
                     Layout.fillWidth: true
-                    Layout.preferredHeight: visible ? 56 : 0
-                    visible: view.controller.conversationStarted
+                    Layout.preferredHeight: 52
 
                     Rectangle {
                         width: 34
                         height: 34
-                        anchors { left: parent.left; verticalCenter: parent.verticalCenter; leftMargin: 20 }
+                        anchors {
+                            left: parent.left
+                            verticalCenter: parent.verticalCenter
+                            leftMargin: 16
+                        }
                         radius: 17
                         color: closeMouse.containsMouse ? "#292929" : "transparent"
 
@@ -112,14 +147,42 @@ Variants {
 
                     Text {
                         anchors.centerIn: parent
-                        width: parent.width - 144
-                        text: view.controller.currentTitle
+                        width: parent.width - 260
+                        text: view.controller.historyVisible
+                            ? "Saved conversations"
+                            : view.controller.currentTitle
                         color: "#f2f2f2"
                         elide: Text.ElideRight
                         horizontalAlignment: Text.AlignHCenter
                         font.family: Theme.fontFamily
                         font.pixelSize: 14
                         font.weight: Font.DemiBold
+                    }
+
+                    Row {
+                        anchors {
+                            right: parent.right
+                            rightMargin: 14
+                            verticalCenter: parent.verticalCenter
+                        }
+                        spacing: 4
+
+                        HeaderButton {
+                            label: view.controller.historyVisible
+                                ? "Chat" : "History"
+                            enabled: view.controller.historyVisible
+                                || view.controller.canOpenHistory
+                            onClicked: view.controller.historyVisible
+                                ? view.controller.closeHistory()
+                                : view.controller.openHistory()
+                        }
+
+                        HeaderButton {
+                            label: "Export"
+                            enabled: view.controller.canExport
+                                && !view.controller.historyVisible
+                            onClicked: view.controller.exportConversation()
+                        }
                     }
                 }
 
@@ -132,8 +195,10 @@ Variants {
                     Layout.leftMargin: 28
                     Layout.rightMargin: 28
                     Layout.topMargin: 12
-                    Layout.bottomMargin: 24
+                    Layout.bottomMargin: view.controller.artifacts.count > 0
+                        ? 12 : 24
                     visible: view.controller.conversationStarted
+                        && !view.controller.historyVisible
                     model: view.controller.messages
                     clip: true
                     boundsBehavior: Flickable.StopAtBounds
@@ -166,8 +231,57 @@ Variants {
                     }
                 }
 
+                AiChatHistory {
+                    Layout.fillWidth: true
+                    Layout.fillHeight: visible
+                    Layout.preferredHeight: visible ? -1 : 0
+                    Layout.leftMargin: 24
+                    Layout.rightMargin: 24
+                    Layout.bottomMargin: 20
+                    visible: view.controller.historyVisible
+                    controller: view.controller
+                }
+
+                Item {
+                    Layout.fillWidth: true
+                    Layout.preferredHeight: visible ? 84 : 0
+                    Layout.leftMargin: 28
+                    Layout.rightMargin: 28
+                    visible: !view.controller.historyVisible
+                        && view.controller.artifacts.count > 0
+
+                    ColumnLayout {
+                        anchors.fill: parent
+                        spacing: 6
+
+                        Text {
+                            text: "Generated files"
+                            color: "#8f8f8f"
+                            font.family: Theme.fontFamily
+                            font.pixelSize: 11
+                            font.weight: Font.DemiBold
+                        }
+
+                        ListView {
+                            id: artifactList
+                            Layout.fillWidth: true
+                            Layout.fillHeight: true
+                            model: view.controller.artifacts
+                            orientation: ListView.Horizontal
+                            spacing: 8
+                            clip: true
+                            boundsBehavior: Flickable.StopAtBounds
+
+                            delegate: AiChatArtifact {
+                                controller: view.controller
+                            }
+                        }
+                    }
+                }
+
                 AiChatComposer {
                     id: composerPanel
+                    visible: !view.controller.historyVisible
                     controller: view.controller
                 }
             }

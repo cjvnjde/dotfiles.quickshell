@@ -40,7 +40,12 @@ Item {
 
     function submitComposer() {
         if (controller.isGenerating) {
-            controller.stop();
+            if (!controller.newChatPending) {
+                controller.stop();
+            }
+            return;
+        }
+        if (controller.incompatibleActionRunning) {
             return;
         }
 
@@ -333,8 +338,8 @@ Item {
                     AiChatActionButton {
                         stopMode: controller.isGenerating
                         enabled: controller.isGenerating
-                            || (!controller.submissionStarting
-                                && !controller.attachmentsBusy
+                            ? !controller.newChatPending
+                            : (!controller.incompatibleActionRunning
                                 && (composer.text.trim().length > 0
                                     || controller.pendingAttachments.count > 0))
                         onClicked: composerRoot.submitComposer()

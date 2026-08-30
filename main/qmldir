@@ -20,3 +20,5 @@ AiChatMessage 1.0 AiChatMessage.qml
 AiChatComposer 1.0 AiChatComposer.qml
 AiChatActionButton 1.0 AiChatActionButton.qml
 AiChatAttachment 1.0 AiChatAttachment.qml
+AiChatHistory 1.0 AiChatHistory.qml
+AiChatArtifact 1.0 AiChatArtifact.qml

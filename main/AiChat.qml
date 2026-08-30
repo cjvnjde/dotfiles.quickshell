@@ -35,9 +35,35 @@ Scope {
         || createChatSandbox.running
     property bool captureRequested: false
     property int conversationGeneration: 0
-    property var pendingThreadDeletes: []
-    property string deletingThreadId: ""
     property string currentTitle: "New conversation"
+    property string persistedThreadName: ""
+    property bool historyVisible: false
+    property bool historyLoading: false
+    property bool historyLoadingMore: false
+    property string historyError: ""
+    property string historyNextCursor: ""
+    property string historyOperation: ""
+    property string historyTargetThreadId: ""
+    property var pendingHydrationThread: null
+    property var pendingHydrationTurns: []
+    property string pendingHydrationCursor: ""
+    property var pendingResumedSettings: null
+    property bool modelCatalogLoading: false
+    property bool exportBusy: false
+    property string exportToken: ""
+    property string exportStagingName: ""
+    property string exportSuggestedName: ""
+    property bool exportRestoreShown: false
+    property bool artifactSaveBusy: false
+    property string artifactSaveToken: ""
+    property bool artifactSaveRestoreShown: false
+    property var outputPreparationContext: null
+    property string outputIndexThreadId: ""
+    property var notifiedTerminalTurnIds: []
+    property var userInterruptedTurnIds: []
+    property bool newChatPending: false
+    property bool rebuildConfirmationPending: false
+    readonly property string rebuildConfirmationNotice: "Rebuild deletes all chat history and generated files. Run /rebuild again to confirm."
     property bool codexAuthorized: false
     property bool syncingChatKit: false
     property bool codexUpdating: false
@@ -46,23 +72,45 @@ Scope {
     property bool rebuildRequested: false
     property string maintenanceNotice: ""
     property string pendingMaintenanceNotice: ""
-    readonly property bool maintenanceStatusVisible: rebuildingSandbox
+    readonly property bool maintenanceStatusVisible: newChatPending
+        || pendingResumedSettings !== null || rebuildingSandbox
+        || modelCatalogLoading
         || codexUpdating || syncingChatKit || maintenanceNotice.length > 0
     readonly property bool conversationStarted: messageModel.count > 0
         || submissionStarting || isGenerating
     readonly property alias messages: messageModel
     readonly property alias pendingAttachments: attachmentModel
+    readonly property alias historyThreads: historyModel
+    readonly property alias artifacts: artifactModel
     readonly property bool attachmentsBusy: screenshot.state === "preparing"
         || screenshot.state === "selecting"
         || screenshot.state === "importing"
         || screenshot.state === "validating"
         || screenshot.state === "capturing"
         || screenshot.state === "copying"
+    readonly property bool historyBusy: historyLoading || historyLoadingMore
+        || historyOperation.length > 0
+    readonly property bool incompatibleActionRunning: attachmentsBusy
+        || submissionStarting || isGenerating || newChatPending
+        || pendingResumedSettings !== null || sandboxSetupRunning
+        || modelCatalogLoading
+        || syncingChatKit || codexUpdating || rebuildingSandbox
+        || historyBusy || exportBusy || artifactSaveBusy
+        || prepareThreadOutputs.running || outputIndex.running
+        || cleanupThreadOutputs.running
+    readonly property bool canOpenHistory: transport.ready
+        && attachmentModel.count === 0 && !incompatibleActionRunning
+    readonly property bool canExport: messageModel.count > 0
+        && !incompatibleActionRunning
+    readonly property bool canSaveArtifacts: transport.ready
+        && !incompatibleActionRunning
     readonly property string attachmentState: screenshot.state
     readonly property string attachmentFailureStage: screenshot.failureStage
 
     signal submissionAccepted()
     signal focusComposer()
+    signal threadRenameSucceeded(string threadId)
+    signal threadDeleteSucceeded(string threadId)
 
     function statusForState(value) {
         if (rebuildingSandbox) {
@@ -86,6 +134,18 @@ Scope {
         if (discoveringSandbox) {
             return "Setting up Codex sandbox…";
         }
+        if (newChatPending) {
+            return "Stopping current response…";
+        }
+        if (pendingResumedSettings !== null) {
+            return "Loading conversation settings…";
+        }
+        if (modelCatalogLoading) {
+            return "Loading model catalog…";
+        }
+        if (maintenanceNotice.length > 0) {
+            return maintenanceNotice;
+        }
         if (value === "connecting") {
             return "Starting sandbox…";
         }
@@ -93,7 +153,7 @@ Scope {
             return "Connecting to Codex…";
         }
         if (value === "ready") {
-            return maintenanceNotice.length > 0 ? maintenanceNotice : "Ready";
+            return "Ready";
         }
         if (value === "streaming") {
             return "Codex is responding…";
@@ -142,10 +202,52 @@ Scope {
         return true;
     }
 
+    function applyPendingResumedSettings(catalogComplete) {
+        if (pendingResumedSettings === null) {
+            return true;
+        }
+
+        const settings = pendingResumedSettings;
+        const model = AiChatLogic.modelById(
+            availableModels, settings.model);
+        if (model === null) {
+            if (catalogComplete) {
+                selectedModel = "";
+                selectedModelName = settings.model || "Codex";
+                selectedEffort = "default";
+                supportedEfforts = [];
+                pendingResumedSettings = null;
+                diagnosticText = "The resumed model is absent from the model catalog.";
+            }
+            return false;
+        }
+
+        chooseModel(model.id);
+        const resumedEffort = String(settings.reasoningEffort || "");
+        const effortSupported = resumedEffort.length > 0
+            && supportedEfforts.indexOf(resumedEffort) >= 0;
+        selectedEffort = effortSupported ? resumedEffort : "default";
+        if (resumedEffort.length > 0 && !effortSupported) {
+            diagnosticText = "The resumed reasoning effort is absent from the model catalog.";
+        }
+        pendingResumedSettings = null;
+        return true;
+    }
+
+    function rememberResumedSettings(payload) {
+        pendingResumedSettings = {
+            model: String(payload && payload.model || ""),
+            reasoningEffort: String(
+                payload && payload.reasoningEffort || "")
+        };
+        applyPendingResumedSettings(!modelCatalogLoading);
+    }
+
     function updateModels(payload) {
         const models = AiChatLogic.modelsFromPayload(payload);
         availableModels = models;
         if (models.length === 0) {
+            applyPendingResumedSettings(true);
             return;
         }
         let active = AiChatLogic.modelById(models, selectedModel);
@@ -153,6 +255,7 @@ Scope {
             active = models.find(model => model.isDefault) || models[0];
         }
         chooseModel(active.id);
+        applyPendingResumedSettings(true);
     }
 
     function modelSettings(params) {
@@ -191,6 +294,12 @@ Scope {
             break;
         case "/copy":
             copyChat();
+            break;
+        case "/export":
+            exportConversation();
+            break;
+        case "/history":
+            openHistory();
             break;
         case "/model":
             chooseModel(argument);
@@ -259,6 +368,102 @@ Scope {
         }
         lastError = "";
         return true;
+    }
+
+    function exportedAttachments(attachments) {
+        const exported = [];
+        if (attachments === undefined || attachments === null) {
+            return exported;
+        }
+        const count = attachments.count !== undefined
+            ? attachments.count : attachments.length || 0;
+        for (let index = 0; index < count; index++) {
+            const attachment = attachments.get !== undefined
+                ? attachments.get(index) : attachments[index];
+            exported.push({
+                displayName: String(attachment.displayName || "Attachment")
+            });
+        }
+        return exported;
+    }
+
+    function conversationExportMessages() {
+        const exported = [];
+        for (let index = 0; index < messageModel.count; index++) {
+            const message = messageModel.get(index);
+            if (message.role !== "user" && message.role !== "assistant") {
+                continue;
+            }
+            exported.push({
+                role: message.role,
+                body: message.body,
+                attachments: exportedAttachments(message.attachments)
+            });
+        }
+        return exported;
+    }
+
+    function exportConversation() {
+        if (!canExport) {
+            lastError = messageModel.count === 0
+                ? "There is no conversation to export yet."
+                : "Wait for the current chat operation to finish before exporting.";
+            return;
+        }
+
+        const exportedAt = new Date();
+        const token = Date.now().toString(36) + "-"
+            + Math.floor(Math.random() * 0x1000000).toString(36);
+        exportToken = token;
+        exportStagingName = ".ai-export-" + token + ".md";
+        exportSuggestedName = AiChatLogic.sanitizedExportFilename(
+            currentTitle, exportedAt);
+        exportRestoreShown = shown;
+        exportBusy = true;
+        const markdown = AiChatLogic.conversationMarkdown(
+            currentTitle, exportedAt, conversationExportMessages());
+        Qt.callLater(() => {
+            if (root.exportBusy && root.exportToken === token) {
+                exportStagingFile.setText(markdown);
+            }
+        });
+    }
+
+    function launchExportDialog() {
+        if (!exportBusy || exportStagingName.length === 0
+                || exportDialog.running) {
+            return;
+        }
+        shown = false;
+        exportDialog.command = [
+            "python3", Quickshell.shellPath("AiFileDialog.py"), "export",
+            AiConfig.exportStagingDirectory, exportStagingName,
+            exportSuggestedName,
+            exportToken
+        ];
+        exportDialog.running = true;
+    }
+
+    function finishExport(token, result, message) {
+        if (!exportBusy || token !== exportToken) {
+            return;
+        }
+        const restoreShown = exportRestoreShown;
+        exportBusy = false;
+        exportToken = "";
+        exportStagingName = "";
+        exportSuggestedName = "";
+        exportRestoreShown = false;
+        if (result === "completed") {
+            lastError = "";
+            showMaintenanceNotice("Conversation exported");
+        } else if (result === "failed") {
+            lastError = String(message || "Could not export the conversation.");
+        }
+        if (restoreShown) {
+            shown = true;
+            Qt.callLater(() => focusComposer());
+        }
     }
 
     function openLink(value) {
@@ -462,7 +667,10 @@ Scope {
     function maintenanceBlocked() {
         return attachmentsBusy || submissionStarting || isGenerating
             || sandboxSetupRunning || syncingChatKit || codexUpdating
-            || rebuildingSandbox;
+            || modelCatalogLoading || pendingResumedSettings !== null
+            || rebuildingSandbox || historyBusy || exportBusy
+            || artifactSaveBusy || prepareThreadOutputs.running
+            || outputIndex.running || cleanupThreadOutputs.running;
     }
 
     function requestCodexUpdate() {
@@ -470,6 +678,8 @@ Scope {
             lastError = "Wait for the current chat operation to finish before updating Codex.";
             return;
         }
+        rebuildConfirmationPending = false;
+        rebuildConfirmationTimer.stop();
         codexUpdateRequested = true;
         pendingMaintenanceNotice = "Codex update complete";
         lastError = "";
@@ -498,16 +708,30 @@ Scope {
         currentTurnId = "";
         latestActivityItemId = "";
         currentTitle = "New conversation";
+        persistedThreadName = "";
         queuedSubmission = null;
         submissionStarting = false;
         isGenerating = false;
         captureRequested = false;
         pendingRequests = {};
-        pendingThreadDeletes = [];
-        deletingThreadId = "";
+        historyVisible = false;
+        historyLoading = false;
+        historyLoadingMore = false;
+        historyError = "";
+        historyNextCursor = "";
+        historyOperation = "";
+        historyTargetThreadId = "";
+        pendingHydrationThread = null;
+        pendingHydrationTurns = [];
+        pendingHydrationCursor = "";
+        pendingResumedSettings = null;
+        modelCatalogLoading = false;
+        newChatPending = false;
         clearConversationFiles();
         clearAttachments();
         messageModel.clear();
+        historyModel.clear();
+        artifactModel.clear();
         screenshot.discard();
     }
 
@@ -524,12 +748,23 @@ Scope {
             lastError = "Wait for the current chat operation to finish before rebuilding.";
             return;
         }
+        if (!rebuildConfirmationPending) {
+            rebuildConfirmationPending = true;
+            maintenanceNoticeTimer.stop();
+            maintenanceNotice = rebuildConfirmationNotice;
+            rebuildConfirmationTimer.restart();
+            return;
+        }
+
+        rebuildConfirmationPending = false;
+        rebuildConfirmationTimer.stop();
+        maintenanceNotice = "";
         clearConversationForRebuild();
         transport.stop();
         codexAuthorized = false;
         codexUpdateRequested = true;
         rebuildRequested = true;
-        pendingMaintenanceNotice = "Sandbox rebuilt and Codex updated";
+        pendingMaintenanceNotice = "Sandbox rebuilt; history and generated files were deleted";
         lastError = "";
         if (resolvedSandboxName.length > 0) {
             beginSandboxRemoval();
@@ -548,6 +783,443 @@ Scope {
         } else {
             open();
         }
+    }
+
+    function historyThreadIndex(threadId) {
+        for (let index = 0; index < historyModel.count; index++) {
+            if (historyModel.get(index).threadId === threadId) {
+                return index;
+            }
+        }
+        return -1;
+    }
+
+    function openHistory() {
+        if (!canOpenHistory || attachmentModel.count > 0) {
+            lastError = attachmentModel.count > 0
+                ? "Remove or send pending attachments before opening history."
+                : "Wait for the current chat operation to finish before opening history.";
+            return;
+        }
+        historyVisible = true;
+        loadHistory(true);
+    }
+
+    function closeHistory() {
+        historyVisible = false;
+        Qt.callLater(() => focusComposer());
+    }
+
+    function loadHistory(reset) {
+        if (!transport.ready || historyLoading || historyLoadingMore
+                || historyOperation.length > 0) {
+            return;
+        }
+        if (!reset && historyNextCursor.length === 0) {
+            return;
+        }
+
+        if (reset) {
+            historyLoading = true;
+            historyError = "";
+        } else {
+            historyLoadingMore = true;
+        }
+        const params = {
+            cwd: AiConfig.sandboxWorkingDirectory,
+            limit: 20,
+            sortKey: "updated_at",
+            sortDirection: "desc",
+            // The umbrella `codex app-server` currently records its sessions
+            // as vscode; appServer covers the dedicated server binary.
+            sourceKinds: ["appServer", "vscode"]
+        };
+        if (!reset) {
+            params.cursor = historyNextCursor;
+        }
+        if (call("thread/list", params, "threadList", { reset: reset }) < 0) {
+            historyLoading = false;
+            historyLoadingMore = false;
+            historyError = "Could not load conversation history.";
+        }
+    }
+
+    function appendHistoryThread(thread) {
+        const threadId = String(thread && thread.id || "");
+        if (threadId.length === 0 || historyThreadIndex(threadId) >= 0) {
+            return;
+        }
+        historyModel.append({
+            threadId: threadId,
+            title: AiChatLogic.threadTitle(thread),
+            updatedText: AiChatLogic.historyUpdatedText(
+                thread.updatedAt, Date.now()),
+            statusText: AiChatLogic.threadStatusText(thread.status)
+        });
+    }
+
+    function resumeThread(threadId) {
+        const requestedThreadId = String(threadId || "");
+        if (requestedThreadId.length === 0 || incompatibleActionRunning
+                || attachmentModel.count > 0) {
+            lastError = "Wait for the current chat operation to finish before switching conversations.";
+            return;
+        }
+        if (requestedThreadId === currentThreadId) {
+            closeHistory();
+            return;
+        }
+
+        historyOperation = "resume";
+        historyTargetThreadId = requestedThreadId;
+        historyError = "";
+        const requestId = call("thread/resume", {
+            threadId: requestedThreadId,
+            cwd: AiConfig.sandboxWorkingDirectory,
+            approvalPolicy: "never",
+            sandbox: "danger-full-access",
+            initialTurnsPage: {
+                limit: 50,
+                sortDirection: "asc",
+                itemsView: "full"
+            }
+        }, "threadResume", {
+            source: "history",
+            targetThreadId: requestedThreadId
+        });
+        if (requestId < 0) {
+            historyOperation = "";
+            historyTargetThreadId = "";
+        }
+    }
+
+    function renameThread(threadId, name) {
+        const requestedThreadId = String(threadId || "");
+        const requestedName = String(name || "")
+            .replace(/[\r\n\t]+/g, " ").trim();
+        if (requestedThreadId.length === 0 || requestedName.length === 0) {
+            historyError = "Enter a conversation name.";
+            return;
+        }
+        if (requestedName.length > 120) {
+            historyError = "Conversation names are limited to 120 characters.";
+            return;
+        }
+        if (incompatibleActionRunning) {
+            historyError = "Wait for the current chat operation to finish.";
+            return;
+        }
+
+        historyOperation = "rename";
+        historyTargetThreadId = requestedThreadId;
+        historyError = "";
+        if (call("thread/name/set", {
+            threadId: requestedThreadId,
+            name: requestedName
+        }, "threadRename", {
+            threadId: requestedThreadId,
+            name: requestedName
+        }) < 0) {
+            historyOperation = "";
+            historyTargetThreadId = "";
+        }
+    }
+
+    function deleteThread(threadId) {
+        const requestedThreadId = String(threadId || "");
+        if (requestedThreadId.length === 0 || incompatibleActionRunning) {
+            historyError = "Wait for the current chat operation to finish.";
+            return;
+        }
+
+        historyOperation = "delete";
+        historyTargetThreadId = requestedThreadId;
+        historyError = "";
+        if (call("thread/delete", {
+            threadId: requestedThreadId
+        }, "threadDelete", {
+            threadId: requestedThreadId
+        }) < 0) {
+            historyOperation = "";
+            historyTargetThreadId = "";
+        }
+    }
+
+    function removeHistoryThread(threadId) {
+        const index = historyThreadIndex(threadId);
+        if (index >= 0) {
+            historyModel.remove(index);
+        }
+    }
+
+    function clearLoadedConversation() {
+        conversationGeneration++;
+        currentThreadId = "";
+        currentTurnId = "";
+        latestActivityItemId = "";
+        currentTitle = "New conversation";
+        persistedThreadName = "";
+        queuedSubmission = null;
+        submissionStarting = false;
+        isGenerating = false;
+        pendingResumedSettings = null;
+        newChatPending = false;
+        clearConversationFiles();
+        clearAttachments();
+        messageModel.clear();
+        artifactModel.clear();
+        screenshot.discard();
+        if (transport.state === "streaming") {
+            transport.state = "ready";
+        }
+    }
+
+    function rememberTerminalTurnId(turnId) {
+        const requestedTurnId = String(turnId || "");
+        if (requestedTurnId.length === 0
+                || notifiedTerminalTurnIds.indexOf(requestedTurnId) >= 0) {
+            return false;
+        }
+        notifiedTerminalTurnIds = notifiedTerminalTurnIds
+            .concat([requestedTurnId]).slice(-128);
+        return true;
+    }
+
+    function hydrationTurnsFromResponse(payload, thread) {
+        const initialPage = payload && payload.initialTurnsPage || null;
+        if (initialPage !== null && Array.isArray(initialPage.data)) {
+            return {
+                data: initialPage.data,
+                nextCursor: String(initialPage.nextCursor || "")
+            };
+        }
+        return {
+            data: Array.isArray(thread.turns) ? thread.turns : [],
+            nextCursor: ""
+        };
+    }
+
+    function beginThreadHydration(payload) {
+        const thread = payload && payload.thread || {};
+        const threadId = String(thread.id || historyTargetThreadId
+            || currentThreadId);
+        if (threadId.length === 0) {
+            historyOperation = "";
+            historyTargetThreadId = "";
+            pendingResumedSettings = null;
+            lastError = "Codex resumed a conversation without a thread ID.";
+            return;
+        }
+
+        const page = hydrationTurnsFromResponse(payload, thread);
+        pendingHydrationThread = thread;
+        pendingHydrationTurns = page.data.slice();
+        pendingHydrationCursor = page.nextCursor;
+        if (pendingHydrationCursor.length > 0) {
+            const requestId = call("thread/turns/list", {
+                threadId: threadId,
+                cursor: pendingHydrationCursor,
+                limit: 50,
+                sortDirection: "asc",
+                itemsView: "full"
+            }, "threadTurnsList", { threadId: threadId });
+            if (requestId < 0) {
+                pendingHydrationThread = null;
+                pendingHydrationTurns = [];
+                pendingHydrationCursor = "";
+                historyOperation = "";
+                historyTargetThreadId = "";
+            }
+            return;
+        }
+        finishThreadHydration();
+    }
+
+    function finishThreadHydration() {
+        const thread = pendingHydrationThread || {};
+        const threadId = String(thread.id || historyTargetThreadId
+            || currentThreadId);
+        if (threadId.length === 0) {
+            historyOperation = "";
+            historyTargetThreadId = "";
+            pendingResumedSettings = null;
+            return;
+        }
+
+        clearConversationFiles();
+        clearAttachments();
+        screenshot.discard();
+        conversationGeneration++;
+        currentThreadId = threadId;
+        persistedThreadName = String(thread.name || "");
+        currentTitle = AiChatLogic.threadTitle(thread);
+        messageModel.clear();
+        const hydrated = AiChatLogic.messagesFromTurns(
+            pendingHydrationTurns, threadId);
+        for (const message of hydrated) {
+            messageModel.append(message);
+        }
+
+        currentTurnId = "";
+        latestActivityItemId = "";
+        isGenerating = false;
+        for (const turn of pendingHydrationTurns) {
+            const turnId = String(turn && turn.id || "");
+            const status = String(turn && turn.status || "");
+            if (status === "inProgress") {
+                currentTurnId = turnId;
+                isGenerating = true;
+            } else {
+                rememberTerminalTurnId(turnId);
+            }
+        }
+        if (isGenerating) {
+            transport.state = "streaming";
+            for (let index = messageModel.count - 1; index >= 0; index--) {
+                const message = messageModel.get(index);
+                if (message.turnId === currentTurnId
+                        && message.role === "activity") {
+                    latestActivityItemId = message.itemId;
+                    break;
+                }
+            }
+        } else {
+            transport.state = "ready";
+        }
+
+        pendingHydrationThread = null;
+        pendingHydrationTurns = [];
+        pendingHydrationCursor = "";
+        historyOperation = "";
+        historyTargetThreadId = "";
+        historyVisible = false;
+        lastError = "";
+        publishPendingMaintenanceNotice();
+        artifactModel.clear();
+        if (!prepareOutputsForThread(threadId, { kind: "resumeRefresh" })) {
+            lastError = "Could not prepare the private generated-file area.";
+            refreshArtifacts();
+        }
+        Qt.callLater(() => focusComposer());
+    }
+
+    function prepareOutputsForThread(threadId, context) {
+        const requestedThreadId = String(threadId || "");
+        if (requestedThreadId.length === 0 || prepareThreadOutputs.running) {
+            return false;
+        }
+        outputPreparationContext = Object.assign({
+            threadId: requestedThreadId
+        }, context || {});
+        prepareThreadOutputs.command = [
+            "bash", Quickshell.shellPath("AiPrepareOutputs.sh"),
+            resolvedSandboxName, AiConfig.sandboxWorkspace, requestedThreadId
+        ];
+        prepareThreadOutputs.running = true;
+        return true;
+    }
+
+    function refreshArtifacts() {
+        if (currentThreadId.length === 0) {
+            artifactModel.clear();
+            return;
+        }
+        if (outputIndex.running) {
+            return;
+        }
+        outputIndexThreadId = currentThreadId;
+        outputIndex.command = [
+            "python3", Quickshell.shellPath("AiOutputs.py"), "index",
+            AiConfig.sandboxOutputHostDirectory, currentThreadId
+        ];
+        outputIndex.running = true;
+    }
+
+    function formatFileSize(byteCount) {
+        const bytes = Number(byteCount || 0);
+        if (bytes < 1024) {
+            return bytes + " B";
+        }
+        if (bytes < 1024 * 1024) {
+            return (bytes / 1024).toFixed(bytes < 10240 ? 1 : 0) + " KiB";
+        }
+        return (bytes / (1024 * 1024)).toFixed(
+            bytes < 10 * 1024 * 1024 ? 1 : 0) + " MiB";
+    }
+
+    function artifactIndex(relativePath) {
+        for (let index = 0; index < artifactModel.count; index++) {
+            if (artifactModel.get(index).relativePath === relativePath) {
+                return index;
+            }
+        }
+        return -1;
+    }
+
+    function saveArtifact(relativePath) {
+        const requestedPath = String(relativePath || "");
+        if (!canSaveArtifacts || artifactIndex(requestedPath) < 0) {
+            lastError = "Wait for the current chat operation to finish before saving a file.";
+            return;
+        }
+        artifactSaveToken = Date.now().toString(36) + "-"
+            + Math.floor(Math.random() * 0x1000000).toString(36);
+        artifactSaveRestoreShown = shown;
+        artifactSaveBusy = true;
+        artifactSaveDialog.command = [
+            "python3", Quickshell.shellPath("AiFileDialog.py"), "artifact",
+            AiConfig.sandboxWorkspace, currentThreadId, requestedPath,
+            artifactSaveToken
+        ];
+        shown = false;
+        artifactSaveDialog.running = true;
+    }
+
+    function finishArtifactSave(token, result, message) {
+        if (!artifactSaveBusy || token !== artifactSaveToken) {
+            return;
+        }
+        const restoreShown = artifactSaveRestoreShown;
+        artifactSaveBusy = false;
+        artifactSaveToken = "";
+        artifactSaveRestoreShown = false;
+        if (result === "completed") {
+            lastError = "";
+            showMaintenanceNotice("Generated file saved");
+        } else if (result === "failed") {
+            lastError = String(message || "Could not save the generated file.");
+        }
+        if (restoreShown) {
+            shown = true;
+            Qt.callLater(() => focusComposer());
+        }
+    }
+
+    function notificationTitle() {
+        const title = persistedThreadName.replace(/[\r\n\t]+/g, " ").trim();
+        const visibleTitle = title.length > 0
+            ? title.slice(0, 120) : "Quick Chat conversation";
+        return visibleTitle.replace(/&/g, "&amp;")
+            .replace(/</g, "&lt;").replace(/>/g, "&gt;");
+    }
+
+    function notifyResponseReady(turnId, status) {
+        const requestedTurnId = String(turnId || "");
+        const firstTerminalEvent = rememberTerminalTurnId(requestedTurnId);
+        const userInterrupted = userInterruptedTurnIds
+            .indexOf(requestedTurnId) >= 0;
+        userInterruptedTurnIds = userInterruptedTurnIds.filter(
+            candidate => candidate !== requestedTurnId);
+        if (!firstTerminalEvent || shown || status !== "completed"
+                || userInterrupted) {
+            return;
+        }
+        Quickshell.execDetached({
+            command: [
+                "bash", Quickshell.shellPath("AiNotifyResponse.sh"),
+                notificationTitle()
+            ]
+        });
     }
 
     function captureRegion() {
@@ -583,41 +1255,45 @@ Scope {
         screenshot.pasteClipboardImage();
     }
 
+    function finishNewChat() {
+        if (overloadRetry.pending !== null
+                && overloadRetry.pending.context.generation !== undefined) {
+            overloadRetry.stop();
+            overloadRetry.pending = null;
+        }
+        captureRequested = false;
+        historyVisible = false;
+        clearLoadedConversation();
+        lastError = "";
+        focusComposer();
+    }
+
     function newChat() {
         if (attachmentsBusy) {
             shown = true;
             lastError = "Wait for the screenshot operation to finish or discard it.";
             return;
         }
+        if (newChatPending) {
+            return;
+        }
+        if (!isGenerating && incompatibleActionRunning) {
+            lastError = "Wait for the current chat operation before creating a new chat.";
+            return;
+        }
 
-        const previousThreadId = currentThreadId;
         if (isGenerating) {
-            stop();
+            newChatPending = true;
+            lastError = "";
+            if (!stop()) {
+                newChatPending = false;
+                if (lastError.length === 0) {
+                    lastError = "Could not stop the current response.";
+                }
+            }
+            return;
         }
-        conversationGeneration++;
-        if (overloadRetry.pending !== null
-                && overloadRetry.pending.context.generation !== undefined) {
-            overloadRetry.stop();
-            overloadRetry.pending = null;
-        }
-        currentThreadId = "";
-        currentTurnId = "";
-        latestActivityItemId = "";
-        currentTitle = "New conversation";
-        queuedSubmission = null;
-        submissionStarting = false;
-        isGenerating = false;
-        captureRequested = false;
-        if (transport.state === "streaming") {
-            transport.state = "ready";
-        }
-        clearConversationFiles();
-        messageModel.clear();
-        clearAttachments();
-        screenshot.discard();
-        lastError = "";
-        focusComposer();
-        queueThreadDeletion(previousThreadId);
+        finishNewChat();
     }
 
     function clearAttachments() {
@@ -711,40 +1387,10 @@ Scope {
         delete updated[requestId];
         pendingRequests = updated;
     }
-    function deleteNextQueuedThread() {
-        if (!transport.ready || deletingThreadId.length > 0
-                || pendingThreadDeletes.length === 0) {
-            return;
-        }
-
-        const threadId = pendingThreadDeletes[0];
-        const requestId = call("thread/delete", { threadId: threadId },
-            "threadDelete", { threadId: threadId });
-        if (requestId >= 0) {
-            deletingThreadId = threadId;
-        }
-    }
-
-    function finishThreadDeletion(threadId) {
-        deletingThreadId = "";
-        pendingThreadDeletes = pendingThreadDeletes.filter(
-            candidate => candidate !== threadId);
-        deleteNextQueuedThread();
-    }
-
-    function queueThreadDeletion(threadId) {
-        const requestedThreadId = String(threadId || "");
-        if (requestedThreadId.length === 0
-                || pendingThreadDeletes.indexOf(requestedThreadId) >= 0) {
-            return;
-        }
-        pendingThreadDeletes = pendingThreadDeletes.concat([requestedThreadId]);
-        deleteNextQueuedThread();
-    }
 
     function send(text) {
         const prompt = text.trim();
-        if (submissionStarting || isGenerating || attachmentsBusy) {
+        if (historyVisible || incompatibleActionRunning) {
             return;
         }
         if (prompt.length === 0 && attachmentModel.count === 0) {
@@ -788,8 +1434,11 @@ Scope {
             }
             call("thread/start", threadParams, "threadStart",
                 { generation: conversationGeneration });
-        } else {
-            startQueuedTurn();
+        } else if (!prepareOutputsForThread(currentThreadId,
+                { kind: "turnStart" })) {
+            submissionStarting = false;
+            queuedSubmission = null;
+            lastError = "Could not prepare the managed output area.";
         }
     }
 
@@ -804,14 +1453,14 @@ Scope {
             input.push({ type: "text", text: queuedSubmission.text });
         }
         for (const attachment of queuedSubmission.attachments) {
+            input.push({
+                type: "text",
+                text: AiChatLogic.attachmentMetadataInput(
+                    attachment.kind, attachment.displayName,
+                    attachment.sandboxPath)
+            });
             if (attachment.kind === "image") {
                 input.push({ type: "localImage", path: attachment.sandboxPath });
-            } else {
-                input.push({
-                    type: "text",
-                    text: "A user-selected text file is available inside the sandbox at "
-                        + attachment.sandboxPath + ". Read it when relevant to the request."
-                });
             }
         }
         call("turn/start", modelSettings({
@@ -827,13 +1476,26 @@ Scope {
     }
 
     function stop() {
-        if (!isGenerating || currentThreadId.length === 0 || currentTurnId.length === 0) {
-            return;
+        if (!isGenerating || currentThreadId.length === 0
+                || currentTurnId.length === 0) {
+            return false;
         }
-        call("turn/interrupt", {
+        const interruptedTurnId = currentTurnId;
+        const requestId = call("turn/interrupt", {
             threadId: currentThreadId,
-            turnId: currentTurnId
-        }, "interrupt", { generation: conversationGeneration });
+            turnId: interruptedTurnId
+        }, "interrupt", {
+            generation: conversationGeneration,
+            turnId: interruptedTurnId
+        });
+        if (requestId < 0) {
+            return false;
+        }
+        if (userInterruptedTurnIds.indexOf(interruptedTurnId) < 0) {
+            userInterruptedTurnIds = userInterruptedTurnIds
+                .concat([interruptedTurnId]).slice(-128);
+        }
+        return true;
     }
 
     function appendMessage(role, text, status, threadId, turnId, itemId, attachments) {
@@ -883,17 +1545,14 @@ Scope {
         const responseGeneration = pending.context.generation;
         if (responseGeneration !== undefined
                 && responseGeneration !== conversationGeneration) {
-            if (succeeded && pending.kind === "threadStart") {
-                const staleThreadId = String(payload.thread
-                    ? payload.thread.id : payload.threadId || "");
-                queueThreadDeletion(staleThreadId);
-            }
             return;
         }
 
         if (!succeeded) {
             if (pending.kind === "modelList") {
+                modelCatalogLoading = false;
                 diagnosticText = "Codex did not provide a model catalog.";
+                applyPendingResumedSettings(true);
                 return;
             }
             if (Number(payload.code) === -32001 && pending.retryCount < 3) {
@@ -902,20 +1561,44 @@ Scope {
                 overloadRetry.restart();
                 return;
             }
-            if (pending.kind === "threadDelete") {
-                const reason = String(payload.message || "unknown app-server error");
-                lastError = "New chat started, but Codex could not delete its "
-                    + "previous thread: " + reason;
-                finishThreadDeletion(pending.context.threadId);
-                return;
-            }
-            lastError = String(payload.message || "Codex rejected " + pending.method + ".");
+
             if (pending.kind === "initialize" || pending.kind === "accountRead") {
                 transport.state = "error";
-            } else if (pending.kind === "threadResume") {
-                currentThreadId = "";
+                lastError = "Could not initialize Codex.";
+            } else if (pending.kind === "threadList") {
+                historyLoading = false;
+                historyLoadingMore = false;
+                historyError = "Could not load conversation history.";
+                lastError = historyError;
+            } else if (pending.kind === "threadResume"
+                    || pending.kind === "threadTurnsList") {
+                pendingHydrationThread = null;
+                pendingHydrationTurns = [];
+                pendingHydrationCursor = "";
+                historyOperation = "";
+                historyTargetThreadId = "";
+                pendingResumedSettings = null;
+                historyError = "Could not resume the conversation.";
+                lastError = historyError;
                 transport.state = "ready";
-                lastError = "The previous chat could not be resumed; the next message will start a new chat.";
+            } else if (pending.kind === "threadRename") {
+                historyOperation = "";
+                historyTargetThreadId = "";
+                historyError = "Could not rename the conversation.";
+                lastError = historyError;
+            } else if (pending.kind === "threadDelete") {
+                historyOperation = "";
+                historyTargetThreadId = "";
+                historyError = "Could not delete the conversation.";
+                lastError = historyError;
+            } else if (pending.kind === "interrupt") {
+                const failedTurnId = String(pending.context.turnId || "");
+                userInterruptedTurnIds = userInterruptedTurnIds.filter(
+                    candidate => candidate !== failedTurnId);
+                newChatPending = false;
+                lastError = "Could not stop the current response.";
+            } else {
+                lastError = "Codex could not complete the chat operation.";
             }
             submissionStarting = false;
             if (pending.kind === "turnStart") {
@@ -928,7 +1611,8 @@ Scope {
             transport.notify("initialized", {});
             call("account/read", { refreshToken: false }, "accountRead", {});
         } else if (pending.kind === "accountRead") {
-            const requiresOpenaiAuth = payload && payload.requiresOpenaiAuth === true;
+            const requiresOpenaiAuth = payload
+                && payload.requiresOpenaiAuth === true;
             if (requiresOpenaiAuth) {
                 codexAuthorized = false;
                 transport.state = "error";
@@ -937,46 +1621,108 @@ Scope {
             } else {
                 codexAuthorized = true;
                 transport.reconnectAttempt = 0;
-                call("model/list", {
+                modelCatalogLoading = true;
+                if (call("model/list", {
                     limit: 100,
                     includeHidden: false
-                }, "modelList", {});
+                }, "modelList", {}) < 0) {
+                    modelCatalogLoading = false;
+                    diagnosticText = "Codex did not provide a model catalog.";
+                    applyPendingResumedSettings(true);
+                }
                 if (currentThreadId.length > 0) {
-                    call("thread/resume", { threadId: currentThreadId },
-                        "threadResume", { generation: conversationGeneration });
+                    call("thread/resume", {
+                        threadId: currentThreadId,
+                        cwd: AiConfig.sandboxWorkingDirectory,
+                        approvalPolicy: "never",
+                        sandbox: "danger-full-access",
+                        initialTurnsPage: {
+                            limit: 50,
+                            sortDirection: "asc",
+                            itemsView: "full"
+                        }
+                    }, "threadResume", {
+                        source: "reconnect",
+                        targetThreadId: currentThreadId,
+                        generation: conversationGeneration
+                    });
                 } else {
                     transport.state = "ready";
                     publishPendingMaintenanceNotice();
-                    deleteNextQueuedThread();
                 }
             }
         } else if (pending.kind === "modelList") {
+            modelCatalogLoading = false;
             updateModels(payload);
+        } else if (pending.kind === "threadList") {
+            const threads = Array.isArray(payload.data) ? payload.data : [];
+            if (pending.context.reset) {
+                historyModel.clear();
+            }
+            for (const thread of threads) {
+                appendHistoryThread(thread);
+            }
+            historyNextCursor = String(payload.nextCursor || "");
+            historyLoading = false;
+            historyLoadingMore = false;
+            historyError = "";
         } else if (pending.kind === "threadResume") {
-            const resumedThread = payload.thread || {};
-            currentThreadId = String(resumedThread.id || currentThreadId);
-            transport.state = "ready";
-            publishPendingMaintenanceNotice();
-            deleteNextQueuedThread();
+            rememberResumedSettings(payload);
+            beginThreadHydration(payload);
+        } else if (pending.kind === "threadTurnsList") {
+            const turns = Array.isArray(payload.data) ? payload.data : [];
+            pendingHydrationTurns = pendingHydrationTurns.concat(turns);
+            pendingHydrationCursor = String(payload.nextCursor || "");
+            if (pendingHydrationCursor.length > 0) {
+                const nextRequest = call("thread/turns/list", {
+                    threadId: pending.context.threadId,
+                    cursor: pendingHydrationCursor,
+                    limit: 50,
+                    sortDirection: "asc",
+                    itemsView: "full"
+                }, "threadTurnsList", {
+                    threadId: pending.context.threadId
+                });
+                if (nextRequest < 0) {
+                    pendingHydrationThread = null;
+                    pendingHydrationTurns = [];
+                    pendingHydrationCursor = "";
+                    historyOperation = "";
+                    historyTargetThreadId = "";
+                }
+            } else {
+                finishThreadHydration();
+            }
         } else if (pending.kind === "threadStart") {
-            currentThreadId = String(payload.thread ? payload.thread.id : payload.threadId || "");
+            currentThreadId = String(payload.thread
+                ? payload.thread.id : payload.threadId || "");
             if (currentThreadId.length === 0) {
                 submissionStarting = false;
                 lastError = "Codex did not return a thread ID.";
                 return;
             }
-            startQueuedTurn();
+            persistedThreadName = "";
+            if (!prepareOutputsForThread(currentThreadId,
+                    { kind: "turnStart" })) {
+                submissionStarting = false;
+                queuedSubmission = null;
+                lastError = "Could not prepare the managed output area.";
+            }
         } else if (pending.kind === "turnStart") {
             const turn = payload.turn || {};
             currentTurnId = String(turn.id || payload.turnId || "");
             const submission = pending.context.submission;
             if (messageModel.count === 0 && submission.text.length > 0) {
-                currentTitle = submission.text.length > 48
-                    ? submission.text.slice(0, 48) + "…" : submission.text;
+                const fallbackTitle = submission.text
+                    .replace(/[\r\n\t]+/g, " ").trim();
+                currentTitle = fallbackTitle.length > 48
+                    ? fallbackTitle.slice(0, 48) + "…" : fallbackTitle;
             }
             currentTurnAttachments = submission.attachments;
-            const submittedHostPaths = submission.attachments.map(item => item.hostPath);
-            conversationHostFiles = conversationHostFiles.concat(submittedHostPaths);
+            const submittedHostPaths = submission.attachments
+                .map(item => item.hostPath);
+            conversationHostFiles = conversationHostFiles
+                .concat(submittedHostPaths);
             appendMessage("user", submission.text, "completed", currentThreadId,
                 currentTurnId, "", submission.attachments);
             appendTurnPlaceholder();
@@ -986,8 +1732,37 @@ Scope {
             transport.state = "streaming";
             attachmentModel.clear();
             submissionAccepted();
+        } else if (pending.kind === "threadRename") {
+            const threadId = pending.context.threadId;
+            const index = historyThreadIndex(threadId);
+            if (index >= 0) {
+                historyModel.setProperty(index, "title", pending.context.name);
+            }
+            if (threadId === currentThreadId) {
+                persistedThreadName = pending.context.name;
+                currentTitle = pending.context.name;
+            }
+            historyOperation = "";
+            historyTargetThreadId = "";
+            historyError = "";
+            lastError = "";
+            threadRenameSucceeded(threadId);
         } else if (pending.kind === "threadDelete") {
-            finishThreadDeletion(pending.context.threadId);
+            const threadId = pending.context.threadId;
+            removeHistoryThread(threadId);
+            if (threadId === currentThreadId) {
+                clearLoadedConversation();
+            }
+            historyOperation = "";
+            historyTargetThreadId = "";
+            historyError = "";
+            lastError = "";
+            cleanupThreadOutputs.command = [
+                "python3", Quickshell.shellPath("AiOutputs.py"), "delete",
+                AiConfig.sandboxOutputHostDirectory, threadId
+            ];
+            cleanupThreadOutputs.running = true;
+            threadDeleteSucceeded(threadId);
         }
     }
 
@@ -1065,9 +1840,7 @@ Scope {
             return;
         }
         if (method === "error") {
-            const eventError = params.error || {};
-            const message = String(eventError.message || params.message
-                || "The Codex turn failed.").slice(0, 600);
+            const message = "The Codex turn failed.";
             lastError = message;
             for (let index = messageModel.count - 1; index >= 0; index--) {
                 const entry = messageModel.get(index);
@@ -1081,11 +1854,11 @@ Scope {
         }
         if (method === "turn/completed") {
             const turn = params.turn || {};
+            const terminalTurnId = String(turn.id || params.turnId
+                || currentTurnId);
             const status = String(turn.status || params.status || "completed");
-            const turnError = turn.error || params.error || {};
             const failureMessage = status === "failed"
-                ? String(turnError.message || "The Codex turn failed.").slice(0, 600)
-                : "";
+                ? "The Codex turn failed." : "";
             if (failureMessage.length > 0) {
                 lastError = failureMessage;
             }
@@ -1097,7 +1870,7 @@ Scope {
             currentTurnAttachments = [];
             for (let index = messageModel.count - 1; index >= 0; index--) {
                 const entry = messageModel.get(index);
-                if (entry.turnId !== currentTurnId
+                if (entry.turnId !== terminalTurnId
                         || entry.messageStatus !== "streaming") {
                     continue;
                 }
@@ -1107,8 +1880,14 @@ Scope {
                     messageModel.setProperty(index, "errorText", failureMessage);
                 }
             }
+            notifyResponseReady(terminalTurnId, status);
+            if (newChatPending) {
+                finishNewChat();
+                return;
+            }
             currentTurnId = "";
             latestActivityItemId = "";
+            refreshArtifacts();
         }
     }
 
@@ -1129,10 +1908,35 @@ Scope {
 
     ListModel { id: messageModel }
     ListModel { id: attachmentModel }
+    ListModel { id: historyModel }
+    ListModel { id: artifactModel }
 
     TextEdit {
         id: clipboardBuffer
         visible: false
+    }
+
+    FileView {
+        id: exportStagingFile
+
+        path: root.exportStagingName.length > 0
+            ? AiConfig.exportStagingDirectory + "/" + root.exportStagingName : ""
+        atomicWrites: true
+        printErrors: false
+        onSaved: root.launchExportDialog()
+        onSaveFailed: {
+            const token = root.exportToken;
+            const stagingName = root.exportStagingName;
+            root.finishExport(token, "failed",
+                "Could not prepare the conversation export.");
+            if (stagingName.length > 0 && !cleanupExportStaging.running) {
+                cleanupExportStaging.command = [
+                    "rm", "-f", "--",
+                    AiConfig.exportStagingDirectory + "/" + stagingName
+                ];
+                cleanupExportStaging.running = true;
+            }
+        }
     }
 
     Timer {
@@ -1141,23 +1945,164 @@ Scope {
         onTriggered: root.maintenanceNotice = ""
     }
 
+    Timer {
+        id: rebuildConfirmationTimer
+        interval: 30000
+        onTriggered: {
+            root.rebuildConfirmationPending = false;
+            if (root.maintenanceNotice === root.rebuildConfirmationNotice) {
+                root.maintenanceNotice = "";
+            }
+        }
+    }
+
+    Process {
+        id: exportDialog
+
+        stderr: StdioCollector {}
+        onExited: {
+            if (!root.exportBusy) {
+                return;
+            }
+            const token = root.exportToken;
+            const stagingName = root.exportStagingName;
+            root.finishExport(token, "failed",
+                "The conversation export helper stopped unexpectedly.");
+            if (stagingName.length > 0 && !cleanupExportStaging.running) {
+                cleanupExportStaging.command = [
+                    "rm", "-f", "--",
+                    AiConfig.exportStagingDirectory + "/" + stagingName
+                ];
+                cleanupExportStaging.running = true;
+            }
+        }
+    }
+
+    Process {
+        id: cleanupExportStaging
+        stderr: StdioCollector {}
+    }
+
+    Process {
+        id: artifactSaveDialog
+
+        stderr: StdioCollector {}
+        onExited: {
+            if (root.artifactSaveBusy) {
+                root.finishArtifactSave(root.artifactSaveToken, "failed",
+                    "The generated-file save helper stopped unexpectedly.");
+            }
+        }
+    }
+
+    Process {
+        id: prepareThreadOutputs
+
+        stderr: StdioCollector {}
+        onExited: function(exitCode) {
+            const context = root.outputPreparationContext || {};
+            root.outputPreparationContext = null;
+            if (exitCode !== 0) {
+                if (context.kind === "turnStart") {
+                    root.submissionStarting = false;
+                    root.queuedSubmission = null;
+                }
+                root.lastError = "Could not prepare the private generated-file area.";
+                if (context.kind === "resumeRefresh") {
+                    root.refreshArtifacts();
+                }
+                return;
+            }
+            if (context.kind === "turnStart") {
+                root.startQueuedTurn();
+            } else {
+                root.refreshArtifacts();
+            }
+        }
+    }
+
+    Process {
+        id: outputIndex
+
+        stdout: StdioCollector { id: outputIndexData }
+        stderr: StdioCollector {}
+        onExited: function(exitCode) {
+            const indexedThreadId = root.outputIndexThreadId;
+            root.outputIndexThreadId = "";
+            if (indexedThreadId !== root.currentThreadId) {
+                return;
+            }
+            if (exitCode !== 0) {
+                root.lastError = "Could not inspect generated files.";
+                return;
+            }
+
+            const indexed = [];
+            let parseFailed = false;
+            const lines = outputIndexData.text.split(/\r?\n/);
+            for (const line of lines) {
+                if (line.length === 0) {
+                    continue;
+                }
+                try {
+                    const item = JSON.parse(line);
+                    const relativePath = String(item.relativePath || "");
+                    const components = relativePath.split("/");
+                    const size = Number(item.size || 0);
+                    if (relativePath.length === 0
+                            || relativePath.startsWith("/")
+                            || components.indexOf("..") >= 0
+                            || !Number.isFinite(size) || size < 0
+                            || size > AiConfig.sandboxOutputMaxBytes) {
+                        continue;
+                    }
+                    indexed.push({
+                        relativePath: relativePath,
+                        size: size,
+                        sizeText: root.formatFileSize(size),
+                        mimeType: String(item.mimeType || "File")
+                    });
+                } catch (error) {
+                    parseFailed = true;
+                    break;
+                }
+            }
+            if (parseFailed) {
+                root.lastError = "Could not read the generated-file index.";
+                return;
+            }
+            artifactModel.clear();
+            for (const item of indexed) {
+                artifactModel.append(item);
+            }
+        }
+    }
+
+    Process {
+        id: cleanupThreadOutputs
+
+        stderr: StdioCollector {}
+        onExited: function(exitCode) {
+            if (exitCode !== 0) {
+                root.lastError = "Conversation deleted, but its generated files could not be removed.";
+            }
+        }
+    }
+
     Process {
         id: chatKitSync
 
         command: [
             "bash", Quickshell.shellPath("AiChatKitSync.sh"),
-            root.resolvedSandboxName
+            root.resolvedSandboxName, AiConfig.sandboxWorkspace
         ]
-        stderr: StdioCollector { id: chatKitSyncError }
+        stderr: StdioCollector {}
         onExited: function(exitCode) {
             root.syncingChatKit = false;
             if (exitCode !== 0) {
-                const diagnostic = chatKitSyncError.text.trim().slice(0, 600);
                 root.pendingMaintenanceNotice = "";
                 transport.state = "error";
-                root.lastError = diagnostic.length > 0
-                    ? "Could not load the AI chat kit: " + diagnostic
-                    : "Could not load the AI chat kit into the sandbox.";
+                root.lastError = "Could not load the AI chat kit into the sandbox.";
                 return;
             }
             transport.start();
@@ -1170,18 +2115,14 @@ Scope {
         command: AiConfig.sbxCommand.concat([
             "exec", root.resolvedSandboxName, "sh", "-lc", "exec codex update"
         ])
-        stdout: StdioCollector { id: codexUpdateOutput }
-        stderr: StdioCollector { id: codexUpdateError }
+        stdout: StdioCollector {}
+        stderr: StdioCollector {}
         onExited: function(exitCode) {
             root.codexUpdating = false;
             root.codexUpdateRequested = false;
             if (exitCode !== 0) {
-                const diagnostic = (codexUpdateError.text.trim()
-                    || codexUpdateOutput.text.trim()).slice(0, 600);
                 root.pendingMaintenanceNotice = "";
-                root.lastError = diagnostic.length > 0
-                    ? "Codex update failed: " + diagnostic
-                    : "Codex update failed.";
+                root.lastError = "Codex update failed.";
             }
             root.syncChatKit();
         }
@@ -1193,18 +2134,15 @@ Scope {
         command: AiConfig.sbxCommand.concat([
             "rm", "--force", AiConfig.sandboxName
         ])
-        stderr: StdioCollector { id: removeChatSandboxError }
+        stderr: StdioCollector {}
         onExited: function(exitCode) {
             root.rebuildingSandbox = false;
             root.rebuildRequested = false;
             if (exitCode !== 0) {
-                const diagnostic = removeChatSandboxError.text.trim().slice(0, 600);
                 root.codexUpdateRequested = false;
                 root.pendingMaintenanceNotice = "";
                 transport.state = "error";
-                root.lastError = diagnostic.length > 0
-                    ? "Could not rebuild the Codex sandbox: " + diagnostic
-                    : "Could not remove the Codex sandbox for rebuilding.";
+                root.lastError = "Could not remove the Codex sandbox for rebuilding.";
                 return;
             }
             root.resolvedSandboxName = "";
@@ -1232,17 +2170,15 @@ Scope {
 
         command: AiConfig.sbxCommand.concat(["ls", "-q"])
         stdout: StdioCollector { id: sandboxListOutput }
-        stderr: StdioCollector { id: sandboxListError }
+        stderr: StdioCollector {}
         onExited: function(exitCode) {
             sandboxSetupTimeout.stop();
             if (root.sandboxSetupTimedOut) {
                 return;
             }
             if (exitCode !== 0) {
-                const diagnostic = sandboxListError.text.trim().slice(0, 180);
-                root.failSandboxSetup(diagnostic.length > 0
-                    ? "Could not list sbx sandboxes: " + diagnostic
-                    : "Could not list sbx sandboxes. Run sbx ls in a terminal.");
+                root.failSandboxSetup(
+                    "Could not list sbx sandboxes. Run sbx ls in a terminal.");
                 return;
             }
             const sandboxes = sandboxListOutput.text.split(/\r?\n/)
@@ -1269,7 +2205,7 @@ Scope {
     Process {
         id: resetSandboxWorkspace
 
-        stderr: StdioCollector { id: resetWorkspaceError }
+        stderr: StdioCollector {}
         onExited: function(exitCode) {
             sandboxSetupTimeout.stop();
             if (root.sandboxSetupTimedOut) {
@@ -1277,12 +2213,12 @@ Scope {
             }
             if (exitCode !== 0) {
                 root.failSandboxSetup(
-                    "Could not reset the private AI sandbox workspace: "
-                        + resetWorkspaceError.text.trim().slice(0, 180));
+                    "Could not reset the private AI sandbox workspace.");
                 return;
             }
             prepareSandboxWorkspace.command = [
-                "install", "-d", "-m", "700", "--", AiConfig.sandboxWorkspace
+                "install", "-d", "-m", "700", "--",
+                AiConfig.sandboxWorkspace, AiConfig.sandboxOutputHostDirectory
             ];
             root.beginSandboxSetupStage(
                 "preparing", AiConfig.sandboxWorkspaceTimeoutMs);
@@ -1317,18 +2253,15 @@ Scope {
         id: createChatSandbox
 
         stdout: StdioCollector {}
-        stderr: StdioCollector { id: createSandboxError }
+        stderr: StdioCollector {}
         onExited: function(exitCode) {
             sandboxSetupTimeout.stop();
             if (root.sandboxSetupTimedOut) {
                 return;
             }
             if (exitCode !== 0) {
-                const diagnostic = createSandboxError.text.trim().slice(0, 600);
                 root.failSandboxSetup(
-                    "sbx create failed for " + AiConfig.sandboxName
-                        + " using " + AiConfig.sandboxWorkspace + ": " + diagnostic);
-                console.warn("AI sandbox creation failed:", diagnostic);
+                    "Could not create the dedicated Codex sandbox. Run sbx diagnose, then use /reconnect.");
                 return;
             }
             root.resolvedSandboxName = AiConfig.sandboxName;
@@ -1351,12 +2284,12 @@ Scope {
         onDiagnostic: message => {
             root.diagnosticText = message;
             if (AiConfig.debug) {
-                console.log("AI app-server diagnostic:", message);
+                console.log("AI app-server lifecycle diagnostic");
             }
         }
         onStateChanged: {
             if (state === "initializing") {
-                root.deletingThreadId = "";
+                root.modelCatalogLoading = false;
                 const updated = {};
                 root.pendingRequests = updated;
                 root.call("initialize", {
@@ -1365,13 +2298,21 @@ Scope {
                         title: "Quickshell AI Quick Chat",
                         version: "1.0.0"
                     },
-                    capabilities: {}
+                    capabilities: { experimentalApi: true }
                 }, "initialize", {});
             } else if (state === "error") {
-                root.deletingThreadId = "";
                 root.codexAuthorized = false;
+                root.modelCatalogLoading = false;
+                root.pendingResumedSettings = null;
                 overloadRetry.stop();
                 overloadRetry.pending = null;
+                root.historyLoading = false;
+                root.historyLoadingMore = false;
+                root.historyOperation = "";
+                root.historyTargetThreadId = "";
+                root.pendingHydrationThread = null;
+                root.pendingHydrationTurns = [];
+                root.pendingHydrationCursor = "";
                 if (root.submissionStarting) {
                     root.submissionStarting = false;
                     root.queuedSubmission = null;
@@ -1391,6 +2332,9 @@ Scope {
                     }
                     root.currentTurnId = "";
                     root.latestActivityItemId = "";
+                }
+                if (root.newChatPending) {
+                    root.finishNewChat();
                 }
                 if (transport.lastError.length > 0) {
                     root.lastError = transport.lastError;
@@ -1457,22 +2401,22 @@ Scope {
                 return;
             }
             if (!transport.ready) {
-                if (pending.kind === "threadDelete") {
-                    root.deletingThreadId = "";
-                } else {
-                    root.lastError = "Codex is busy; retry when the backend is ready.";
-                    root.submissionStarting = false;
-                }
+                root.lastError = "Codex is busy; retry when the backend is ready.";
+                root.submissionStarting = false;
+                root.historyLoading = false;
+                root.historyLoadingMore = false;
+                root.historyOperation = "";
+                root.historyTargetThreadId = "";
                 pending = null;
                 return;
             }
             const requestId = transport.request(pending.method, pending.params);
             if (requestId < 0) {
-                if (pending.kind === "threadDelete") {
-                    root.deletingThreadId = "";
-                } else {
-                    root.submissionStarting = false;
-                }
+                root.submissionStarting = false;
+                root.historyLoading = false;
+                root.historyLoadingMore = false;
+                root.historyOperation = "";
+                root.historyTargetThreadId = "";
                 pending = null;
                 return;
             }
@@ -1492,6 +2436,29 @@ Scope {
         function close(): void { root.close(); }
         function screenshot(): void { root.captureRegion(); }
         function newChat(): void { root.newChat(); root.open(); }
+        function history(): void {
+            root.open();
+            Qt.callLater(() => root.openHistory());
+        }
+        function exportChat(): void { root.exportConversation(); }
+        function exportCompleted(token: string): void {
+            root.finishExport(token, "completed", "");
+        }
+        function exportCancelled(token: string): void {
+            root.finishExport(token, "cancelled", "");
+        }
+        function exportFailed(token: string, message: string): void {
+            root.finishExport(token, "failed", message);
+        }
+        function artifactSaveCompleted(token: string): void {
+            root.finishArtifactSave(token, "completed", "");
+        }
+        function artifactSaveCancelled(token: string): void {
+            root.finishArtifactSave(token, "cancelled", "");
+        }
+        function artifactSaveFailed(token: string, message: string): void {
+            root.finishArtifactSave(token, "failed", message);
+        }
         function attachScreenshot(path: string): void {
             screenshot.acceptCapture(path);
         }

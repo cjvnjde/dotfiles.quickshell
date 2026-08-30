@@ -9,7 +9,13 @@ QtObject {
         "bash", Quickshell.shellPath("AiSbx.sh")
     ]
     readonly property string sandboxWorkspace: Quickshell.stateDir + "/ai-sandbox-workspace"
+    readonly property string exportStagingDirectory: {
+        const runtimeDirectory = Quickshell.env("XDG_RUNTIME_DIR");
+        return runtimeDirectory.length > 0 ? runtimeDirectory : sandboxWorkspace;
+    }
     readonly property string sandboxChatKitDirectory: "/home/agent/quickshell-ai-chat-kit"
+    readonly property string sandboxOutputHostDirectory: sandboxWorkspace + "/outputs"
+    readonly property int sandboxOutputMaxBytes: 100 * 1024 * 1024
     readonly property int sandboxCheckTimeoutMs: 20000
     readonly property int sandboxWorkspaceTimeoutMs: 15000
     readonly property int sandboxCreateTimeoutMs: 300000

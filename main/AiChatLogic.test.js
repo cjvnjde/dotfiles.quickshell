@@ -1,0 +1,115 @@
+const assert = require("node:assert/strict");
+const test = require("node:test");
+
+const logic = require("./AiChatLogic.js");
+
+test("conversationMarkdown preserves assistant Markdown and safely quotes user content", () => {
+    const assistant = '## Result\n\n```js\nconsole.log("ok");\n```';
+    const markdown = logic.conversationMarkdown("Demo #1", "2026-08-30T12:34:56.000Z", [
+        {
+            role: "user",
+            body: "first line\n# not a heading <private> &copy;",
+            attachments: [{ displayName: "notes [draft].txt" }]
+        },
+        { role: "activity", body: "/home/private", attachments: [] },
+        { role: "assistant", body: assistant, attachments: [] },
+        { role: "notice", body: "transient", attachments: [] }
+    ]);
+
+    assert.ok(markdown.startsWith("# Demo \\#1\n\n_Exported: 2026\\-08\\-30T12:34:56\\.000Z_"));
+    assert.ok(markdown.includes("> first line\n> \\# not a heading &lt;private\\> &amp;copy;"));
+    assert.ok(markdown.includes("- notes \\[draft\\]\\.txt"));
+    assert.ok(markdown.includes("## Assistant\n\n" + assistant));
+    assert.doesNotMatch(markdown, /transient|\/home\/private/);
+});
+
+test("messagesFromTurns hydrates attachments and terminal turn states", () => {
+    const imageMetadata = logic.attachmentMetadataInput(
+        "image",
+        "chart.png",
+        "/tmp/quickshell-ai/private.png"
+    );
+    const textMetadata = logic.attachmentMetadataInput(
+        "text",
+        "notes.txt",
+        "/tmp/quickshell-ai/private.txt"
+    );
+    const turns = [
+        {
+            id: "turn-complete",
+            status: "completed",
+            startedAt: 1_700_000_000,
+            items: [
+                {
+                    id: "user-one",
+                    type: "userMessage",
+                    content: [
+                        { type: "text", text: "multiline\nrequest" },
+                        { type: "text", text: imageMetadata },
+                        { type: "localImage", path: "/tmp/quickshell-ai/private.png" },
+                        { type: "text", text: textMetadata }
+                    ]
+                },
+                { id: "reasoning", type: "reasoning", summary: ["Checked"] },
+                { id: "answer", type: "agentMessage", text: "Done" }
+            ]
+        },
+        {
+            id: "turn-failed",
+            status: "failed",
+            error: { message: "Backend failed" },
+            items: [{ id: "user-two", type: "userMessage", content: [] }]
+        },
+        {
+            id: "turn-interrupted",
+            status: "interrupted",
+            items: []
+        }
+    ];
+
+    const messages = logic.messagesFromTurns(turns, "thread-one");
+    assert.deepEqual(
+        messages.map((message) => message.role),
+        ["user", "activity", "assistant", "assistant", "assistant"]
+    );
+    assert.equal(messages[0].body, "multiline\nrequest");
+    assert.deepEqual(
+        messages[0].attachments.map((attachment) => attachment.displayName),
+        ["chart.png", "notes.txt"]
+    );
+    assert.ok(messages[0].attachments.every((attachment) => attachment.hostPath === ""));
+    assert.equal(messages[3].messageStatus, "failed");
+    assert.equal(messages[3].errorText, "Backend failed");
+    assert.equal(messages[4].messageStatus, "interrupted");
+    assert.doesNotMatch(JSON.stringify(messages), /private\.(png|txt)/);
+});
+
+test("messagesFromTurns represents an in-progress turn without eager duplication", () => {
+    const turns = [{ id: "active", status: "inProgress", items: [] }];
+    const first = logic.messagesFromTurns(turns, "thread");
+    const second = logic.messagesFromTurns(turns, "thread");
+
+    assert.deepEqual(first, second);
+    assert.equal(first.length, 1);
+    assert.equal(first[0].role, "activity");
+    assert.equal(first[0].messageStatus, "streaming");
+    assert.equal(first[0].itemId, "turn:active");
+});
+
+test("sanitizedExportFilename retains the Markdown extension", () => {
+    assert.equal(
+        logic.sanitizedExportFilename("../Quarter: report?", "2026-08-30T00:00:00Z"),
+        "Quarter-report-2026-08-30.md"
+    );
+});
+
+test("threadTitle hides internal attachment metadata and paths", () => {
+    const preview = logic.attachmentMetadataInput(
+        "text",
+        "notes]]draft.txt",
+        "/tmp/quickshell-ai/private.txt"
+    );
+
+    assert.equal(logic.threadTitle({ preview }), "notes]]draft.txt");
+    assert.doesNotMatch(logic.threadTitle({ preview }), /quickshell-ai|private/);
+});

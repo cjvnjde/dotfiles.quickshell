@@ -18,6 +18,18 @@ const COMMAND_CATALOG = [
         immediate: true
     },
     {
+        label: "/export",
+        detail: "Save this conversation as Markdown",
+        draft: "/export",
+        immediate: true
+    },
+    {
+        label: "/history",
+        detail: "Browse saved conversations",
+        draft: "/history",
+        immediate: true
+    },
+    {
         label: "/model",
         detail: "Change model",
         draft: "/model ",
@@ -37,7 +49,7 @@ const COMMAND_CATALOG = [
     },
     {
         label: "/new",
-        detail: "Start a new chat",
+        detail: "Start a new chat and keep this conversation",
         draft: "/new",
         immediate: true
     },
@@ -55,11 +67,14 @@ const COMMAND_CATALOG = [
     },
     {
         label: "/rebuild",
-        detail: "Recreate the sandbox and update Codex",
+        detail: "Delete all chat history and generated files",
         draft: "/rebuild",
         immediate: true
     }
 ];
+
+const ATTACHMENT_METADATA_PREFIX = "[[quickshell-ai-attachment:";
+const ATTACHMENT_METADATA_SUFFIX = "]]";
 
 function titleCase(value) {
     const text = String(value || "");
@@ -276,6 +291,420 @@ function textFromBlocks(value) {
     return parts.join("\n\n");
 }
 
+function normalizedAttachmentName(value, fallback) {
+    const name = String(value || fallback || "Attachment")
+        .replace(/[\u0000-\u001f\u007f]/g, " ")
+        .trim();
+    return name.length > 0 ? name.slice(0, 120) : fallback;
+}
+
+function attachmentMetadataInput(kind, displayName, sandboxPath) {
+    const normalizedKind = kind === "text" ? "text" : "image";
+    const metadata = encodeURIComponent(JSON.stringify({
+        version: 1,
+        kind: normalizedKind,
+        displayName: normalizedAttachmentName(
+            displayName,
+            normalizedKind === "text" ? "Text attachment" : "Image attachment")
+    }));
+    const marker = ATTACHMENT_METADATA_PREFIX + metadata
+        + ATTACHMENT_METADATA_SUFFIX;
+    if (normalizedKind === "text") {
+        return marker
+            + "\nA user-selected text file is available inside the sandbox at "
+            + String(sandboxPath || "")
+            + ". Read it when relevant to the request.";
+    }
+    return marker;
+}
+
+function attachmentFromMetadataInput(value) {
+    const text = String(value || "");
+    if (text.indexOf(ATTACHMENT_METADATA_PREFIX) !== 0) {
+        return null;
+    }
+    const suffixIndex = text.indexOf(
+        ATTACHMENT_METADATA_SUFFIX, ATTACHMENT_METADATA_PREFIX.length);
+    if (suffixIndex < 0) {
+        return null;
+    }
+    try {
+        const metadata = JSON.parse(decodeURIComponent(text.slice(
+            ATTACHMENT_METADATA_PREFIX.length, suffixIndex)));
+        if (!metadata || metadata.version !== 1
+                || (metadata.kind !== "text" && metadata.kind !== "image")
+                || typeof metadata.displayName !== "string") {
+            return null;
+        }
+        const kind = metadata.kind;
+        return {
+            attachmentKind: kind,
+            displayName: normalizedAttachmentName(
+                metadata.displayName,
+                kind === "text" ? "Text attachment" : "Image attachment")
+        };
+    } catch (error) {
+        return null;
+    }
+}
+
+function isLegacyTextAttachmentInput(value) {
+    const text = String(value || "");
+    return /^A user-selected text file is available inside the sandbox at /.test(text);
+}
+
+function persistedMessage(
+    role,
+    body,
+    status,
+    threadId,
+    turnId,
+    itemId,
+    attachments,
+    createdAt,
+    ordinal
+) {
+    return {
+        messageId: String(itemId || turnId + "-" + ordinal),
+        role: role,
+        body: String(body || ""),
+        messageStatus: normalizedActivityStatus(status, "completed"),
+        threadId: String(threadId || ""),
+        turnId: String(turnId || ""),
+        itemId: String(itemId || ""),
+        attachments: attachments || [],
+        activityType: "",
+        activityTitle: "",
+        activityOutput: "",
+        errorText: "",
+        createdAt: createdAt
+    };
+}
+
+function turnCreatedAt(turn) {
+    const startedAt = Number((turn && turn.startedAt) || 0);
+    if (!Number.isFinite(startedAt) || startedAt <= 0) {
+        return "";
+    }
+    return new Date(startedAt * 1000).toISOString();
+}
+
+function messagesFromTurns(turns, threadId) {
+    const messages = [];
+    const sourceTurns = Array.isArray(turns) ? turns : [];
+    let ordinal = 0;
+
+    for (const turn of sourceTurns) {
+        if (!turn) {
+            continue;
+        }
+        const turnId = String(turn.id || "");
+        const turnStatus = normalizedActivityStatus(turn.status, "completed");
+        const createdAt = turnCreatedAt(turn);
+        const items = Array.isArray(turn.items) ? turn.items : [];
+        let lastAssistantIndex = -1;
+        let hasTurnProgress = false;
+
+        for (const item of items) {
+            if (!item) {
+                continue;
+            }
+            const itemType = String(item.type || "");
+            const itemId = String(item.id || "");
+            if (itemType === "userMessage") {
+                const content = Array.isArray(item.content) ? item.content : [];
+                const textParts = [];
+                const attachments = [];
+                const pendingImages = [];
+
+                for (const input of content) {
+                    if (!input) {
+                        continue;
+                    }
+                    const inputType = String(input.type || "");
+                    if (inputType === "text") {
+                        const text = String(input.text || "");
+                        const metadata = attachmentFromMetadataInput(text);
+                        if (metadata !== null) {
+                            if (metadata.attachmentKind === "image") {
+                                pendingImages.push(metadata);
+                            } else {
+                                attachments.push({
+                                    hostPath: "",
+                                    attachmentKind: "text",
+                                    displayName: metadata.displayName
+                                });
+                            }
+                            continue;
+                        }
+                        if (isLegacyTextAttachmentInput(text)) {
+                            attachments.push({
+                                hostPath: "",
+                                attachmentKind: "text",
+                                displayName: "Text attachment"
+                            });
+                            continue;
+                        }
+                        textParts.push(text);
+                    } else if (inputType === "localImage"
+                            || inputType === "image") {
+                        const metadata = pendingImages.length > 0
+                            ? pendingImages.shift()
+                            : {
+                                attachmentKind: "image",
+                                displayName: "Image attachment"
+                            };
+                        attachments.push({
+                            hostPath: "",
+                            attachmentKind: "image",
+                            displayName: metadata.displayName
+                        });
+                    }
+                }
+                for (const metadata of pendingImages) {
+                    attachments.push({
+                        hostPath: "",
+                        attachmentKind: "image",
+                        displayName: metadata.displayName
+                    });
+                }
+                const userBody = textParts.join("\n\n");
+                if (userBody.length > 0 || attachments.length > 0) {
+                    messages.push(
+                        persistedMessage(
+                            "user",
+                            userBody,
+                            "completed",
+                            threadId,
+                            turnId,
+                            itemId,
+                            attachments,
+                            createdAt,
+                            ordinal++
+                        )
+                    );
+                }
+                continue;
+            }
+            if (itemType === "agentMessage") {
+                messages.push(
+                    persistedMessage(
+                        "assistant",
+                        item.text || "",
+                        turnStatus,
+                        threadId,
+                        turnId,
+                        itemId,
+                        [],
+                        createdAt,
+                        ordinal++
+                    )
+                );
+                lastAssistantIndex = messages.length - 1;
+                hasTurnProgress = true;
+                continue;
+            }
+            if (!isActivityItem(item)) {
+                continue;
+            }
+
+            const activity = persistedMessage(
+                "activity",
+                activityBody(item),
+                normalizedActivityStatus(item.status, turnStatus),
+                threadId,
+                turnId,
+                itemId,
+                [],
+                createdAt,
+                ordinal++
+            );
+            activity.activityType = itemType;
+            activity.activityTitle = activityTitle(item);
+            activity.activityOutput = activityOutput(item);
+            messages.push(activity);
+            hasTurnProgress = true;
+        }
+
+        const failure = turn.error || {};
+        const failureMessage =
+            turnStatus === "failed"
+                ? String(failure.message || "The Codex turn failed.").slice(0, 600)
+                : "";
+        if (failureMessage.length > 0 && lastAssistantIndex >= 0) {
+            messages[lastAssistantIndex].errorText = failureMessage;
+        } else if (
+            (turnStatus === "failed" || turnStatus === "interrupted") &&
+            lastAssistantIndex < 0
+        ) {
+            const terminal = persistedMessage(
+                "assistant",
+                "",
+                turnStatus,
+                threadId,
+                turnId,
+                "",
+                [],
+                createdAt,
+                ordinal++
+            );
+            terminal.errorText = failureMessage;
+            messages.push(terminal);
+        } else if (turnStatus === "streaming" && !hasTurnProgress) {
+            const placeholder = persistedMessage(
+                "activity",
+                "",
+                "streaming",
+                threadId,
+                turnId,
+                "turn:" + turnId,
+                [],
+                createdAt,
+                ordinal++
+            );
+            placeholder.activityType = "turn";
+            placeholder.activityTitle = "Thinking";
+            messages.push(placeholder);
+        }
+    }
+    return messages;
+}
+
+function escapeMarkdownLiteral(value) {
+    return String(value || "")
+        .replace(/\\/g, "\\\\")
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/([`*_{}\[\]()#+.!|>-])/g, "\\$1");
+}
+
+function quotedUserMarkdown(value) {
+    return String(value || "")
+        .split("\n")
+        .map(line => line.length > 0
+            ? "> " + escapeMarkdownLiteral(line) : ">")
+        .join("\n");
+}
+
+function conversationMarkdown(title, exportedAt, messages) {
+    const safeTitle = escapeMarkdownLiteral(
+        String(title || "Conversation")
+            .replace(/[\r\n\t]+/g, " ")
+            .trim()
+    );
+    const timestamp = exportedAt instanceof Date
+        ? exportedAt.toISOString() : String(exportedAt || "");
+    const sections = [
+        "# " + (safeTitle.length > 0 ? safeTitle : "Conversation"),
+        "_Exported: " + escapeMarkdownLiteral(timestamp) + "_"
+    ];
+
+    for (const message of Array.isArray(messages) ? messages : []) {
+        if (!message || (message.role !== "user" && message.role !== "assistant")) {
+            continue;
+        }
+        const body = String(message.body || "");
+        const attachments = Array.isArray(message.attachments)
+            ? message.attachments : [];
+        if (body.length === 0 && attachments.length === 0) {
+            continue;
+        }
+        if (message.role === "assistant") {
+            sections.push("## Assistant\n\n" + body);
+            continue;
+        }
+
+        const userParts = ["## You"];
+        if (body.length > 0) {
+            userParts.push(quotedUserMarkdown(body));
+        }
+        if (attachments.length > 0) {
+            const names = attachments.map(attachment => "- "
+                + escapeMarkdownLiteral(normalizedAttachmentName(
+                    attachment.displayName, "Attachment")));
+            userParts.push("**Attachments**\n\n" + names.join("\n"));
+        }
+        sections.push(userParts.join("\n\n"));
+    }
+    return sections.join("\n\n") + "\n";
+}
+
+function sanitizedExportFilename(title, exportedAt) {
+    const date = exportedAt instanceof Date ? exportedAt : new Date(exportedAt);
+    const datePart = Number.isNaN(date.getTime())
+        ? "export" : date.toISOString().slice(0, 10);
+    let base = String(title || "conversation")
+        .replace(/[\r\n\t]+/g, " ")
+        .trim()
+        .replace(/\s+/g, "-")
+        .replace(/[^A-Za-z0-9._-]/g, "-")
+        .replace(/-+/g, "-")
+        .replace(/^[.-]+|[.-]+$/g, "")
+        .slice(0, 64);
+    if (base.length === 0) {
+        base = "conversation";
+    }
+    return base + "-" + datePart + ".md";
+}
+
+function threadTitle(thread) {
+    const persistedName = String((thread && thread.name) || "")
+        .replace(/[\r\n\t]+/g, " ").trim();
+    if (persistedName.length > 0) {
+        return persistedName.slice(0, 120);
+    }
+    const rawPreview = String((thread && thread.preview) || "");
+    const attachment = attachmentFromMetadataInput(rawPreview);
+    if (attachment !== null) {
+        return attachment.displayName;
+    }
+    if (isLegacyTextAttachmentInput(rawPreview)) {
+        return "Text attachment";
+    }
+    const preview = rawPreview.replace(/[\r\n\t]+/g, " ").trim();
+    if (preview.length > 80) {
+        return preview.slice(0, 80) + "…";
+    }
+    return preview || "Untitled conversation";
+}
+
+function threadStatusText(status) {
+    const type = typeof status === "string"
+        ? status : String((status && status.type) || "notLoaded");
+    if (type === "active") {
+        return "Active";
+    }
+    if (type === "idle") {
+        return "Ready";
+    }
+    if (type === "systemError") {
+        return "Error";
+    }
+    return "Saved";
+}
+
+function historyUpdatedText(updatedAt, nowMilliseconds) {
+    const timestamp = Number(updatedAt || 0) * 1000;
+    const now = Number(nowMilliseconds || Date.now());
+    if (!Number.isFinite(timestamp) || timestamp <= 0) {
+        return "Unknown time";
+    }
+    const elapsed = Math.max(0, now - timestamp);
+    if (elapsed < 60000) {
+        return "Just now";
+    }
+    if (elapsed < 3600000) {
+        return Math.floor(elapsed / 60000) + "m ago";
+    }
+    if (elapsed < 86400000) {
+        return Math.floor(elapsed / 3600000) + "h ago";
+    }
+    if (elapsed < 604800000) {
+        return Math.floor(elapsed / 86400000) + "d ago";
+    }
+    return new Date(timestamp).toISOString().slice(0, 10);
+}
+
 function prettyValue(value) {
     if (value === undefined || value === null || value === "") {
         return "";
@@ -440,6 +869,15 @@ if (typeof module !== "undefined") {
         safeAssistantMarkdown,
         markdownBlocks,
         textFromBlocks,
+        normalizedAttachmentName,
+        attachmentMetadataInput,
+        attachmentFromMetadataInput,
+        messagesFromTurns,
+        conversationMarkdown,
+        sanitizedExportFilename,
+        threadTitle,
+        threadStatusText,
+        historyUpdatedText,
         prettyValue,
         normalizedActivityStatus,
         activityStatusLabel,
