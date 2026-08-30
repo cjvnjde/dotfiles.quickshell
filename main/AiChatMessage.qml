@@ -267,6 +267,9 @@ Item {
                         }
 
                         Rectangle {
+                            id: codeBlock
+                            property bool copied: false
+
                             Layout.fillWidth: true
                             Layout.preferredHeight: visible
                                 ? codeLayout.implicitHeight + 20 : 0
@@ -275,6 +278,12 @@ Item {
                             color: "#111111"
                             border.width: 1
                             border.color: "#343434"
+
+                            Timer {
+                                id: codeCopyReset
+                                interval: 1400
+                                onTriggered: codeBlock.copied = false
+                            }
 
                             ColumnLayout {
                                 id: codeLayout
@@ -288,9 +297,13 @@ Item {
 
                                 Text {
                                     Layout.fillWidth: true
+                                    Layout.preferredHeight: 28
+                                    Layout.rightMargin: 38
                                     text: modelData.language.length > 0
                                         ? modelData.language : "code"
                                     color: "#858585"
+                                    verticalAlignment: Text.AlignVCenter
+                                    elide: Text.ElideRight
                                     font.family: Theme.fontFamily
                                     font.pixelSize: 11
                                 }
@@ -308,6 +321,73 @@ Item {
                                     font.pixelSize: 13
                                     readOnly: true
                                     selectByMouse: true
+                                }
+                            }
+
+                            HoverHandler {
+                                id: codeHover
+                            }
+
+                            Rectangle {
+                                id: codeCopyButton
+                                anchors {
+                                    top: parent.top
+                                    right: parent.right
+                                    margins: 7
+                                }
+                                width: 32
+                                height: 28
+                                opacity: codeHover.hovered
+                                    || codeCopyMouse.containsMouse ? 1 : 0
+                                z: 2
+                                radius: 8
+                                color: codeCopyMouse.containsMouse
+                                    ? "#2d2d2d" : "#1d1d1d"
+
+                                Behavior on opacity {
+                                    NumberAnimation { duration: 100 }
+                                }
+
+                                Item {
+                                    anchors.centerIn: parent
+                                    width: 15
+                                    height: 15
+
+                                    Rectangle {
+                                        x: 4
+                                        width: 10
+                                        height: 10
+                                        radius: 1
+                                        color: "transparent"
+                                        border.width: 1
+                                        border.color: codeBlock.copied
+                                            ? Theme.green : "#8b8b8b"
+                                    }
+
+                                    Rectangle {
+                                        y: 4
+                                        width: 10
+                                        height: 10
+                                        radius: 1
+                                        color: codeCopyMouse.containsMouse
+                                            ? "#2d2d2d" : "#1d1d1d"
+                                        border.width: 1
+                                        border.color: codeBlock.copied
+                                            ? Theme.green : "#8b8b8b"
+                                    }
+                                }
+
+                                MouseArea {
+                                    id: codeCopyMouse
+                                    anchors.fill: parent
+                                    hoverEnabled: true
+                                    cursorShape: Qt.PointingHandCursor
+                                    onClicked: {
+                                        if (controller.copyText(modelData.text)) {
+                                            codeBlock.copied = true;
+                                            codeCopyReset.restart();
+                                        }
+                                    }
                                 }
                             }
                         }
@@ -333,12 +413,9 @@ Item {
             }
         }
 
-        MouseArea {
+        HoverHandler {
             id: messageHover
-            anchors.fill: parent
             enabled: answerCopyAvailable
-            acceptedButtons: Qt.NoButton
-            hoverEnabled: true
         }
 
         Rectangle {
@@ -350,7 +427,7 @@ Item {
             width: 32
             height: 28
             visible: answerCopyAvailable
-            opacity: messageHover.containsMouse
+            opacity: messageHover.hovered
                 || answerCopyMouse.containsMouse ? 1 : 0
             z: 2
             radius: 8
