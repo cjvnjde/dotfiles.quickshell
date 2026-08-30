@@ -46,8 +46,7 @@ answers render as Markdown, open web and email links externally, provide an
 icon-only whole-answer copy action, and show fenced code in separate blocks
 with their own copy icons. Thinking summaries, shell commands, file changes,
 searches, and other app-server tool items appear as live, expandable activity
-cards in detailed activity mode. Scrolling away from the newest message reveals
-a centered button above the composer that returns to the bottom. The footer
+cards in detailed activity mode. The footer
 shows the `sbx` authorization state, active Codex model and thinking level, and
 a compact circular send button that becomes a stop button while a response is
 streaming. Pasting while the composer is focused attaches a
