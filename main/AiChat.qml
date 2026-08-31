@@ -14,10 +14,16 @@ Scope {
     property string lastError: transport.lastError
     property bool isGenerating: false
     property bool submissionStarting: false
-    property string selectedModel: ""
+    property string selectedModel: chatPreferences.selectedModel
     property string selectedModelName: "Codex"
-    property string selectedEffort: "default"
-    property string activityMode: "detailed"
+    property string selectedEffort: chatPreferences.selectedEffort
+    property string activityMode: chatPreferences.activityMode === "compact"
+        ? "compact" : "detailed"
+
+    onSelectedModelChanged: chatPreferences.selectedModel = selectedModel
+    onSelectedEffortChanged: chatPreferences.selectedEffort = selectedEffort
+    onActivityModeChanged: chatPreferences.activityMode = activityMode
+
     property string latestActivityItemId: ""
     property var availableModels: []
     property var supportedEfforts: []
@@ -1456,7 +1462,11 @@ Scope {
                 displayName: attachment.displayName
             });
         }
-        queuedSubmission = { text: prompt, attachments: attachments };
+        queuedSubmission = {
+            text: prompt,
+            attachments: attachments,
+            optimisticMessageId: ""
+        };
         submissionStarting = true;
         lastError = "";
         if (currentThreadId.length === 0) {
@@ -1480,6 +1490,18 @@ Scope {
             queuedSubmission = null;
             lastError = "Could not prepare the managed output area.";
             return false;
+        }
+        const firstMessage = messageModel.count === 0;
+        const messageIndex = appendMessage("user", prompt, "sending",
+            currentThreadId, "", "", attachments);
+        const submission = Object.assign({}, queuedSubmission, {
+            optimisticMessageId: messageModel.get(messageIndex).messageId
+        });
+        queuedSubmission = submission;
+        if (firstMessage && prompt.length > 0) {
+            const fallbackTitle = prompt.replace(/[\r\n\t]+/g, " ").trim();
+            currentTitle = fallbackTitle.length > 48
+                ? fallbackTitle.slice(0, 48) + "…" : fallbackTitle;
         }
         return true;
     }
@@ -1505,16 +1527,20 @@ Scope {
                 input.push({ type: "localImage", path: attachment.sandboxPath });
             }
         }
-        call("turn/start", modelSettings({
+        const submission = queuedSubmission;
+        const requestId = call("turn/start", modelSettings({
             threadId: currentThreadId,
             input: input,
             cwd: AiConfig.sandboxWorkingDirectory,
             approvalPolicy: "never",
             sandboxPolicy: { type: "dangerFullAccess" }
         }), "turnStart", {
-            submission: queuedSubmission,
+            submission: submission,
             generation: conversationGeneration
         });
+        if (requestId < 0) {
+            failSubmission(submission, lastError);
+        }
     }
 
     function stop() {
@@ -1566,6 +1592,30 @@ Scope {
             createdAt: new Date().toISOString()
         });
         return messageModel.count - 1;
+    }
+
+    function submissionMessageIndex(submission) {
+        const messageId = String(
+            submission && submission.optimisticMessageId || "");
+        if (messageId.length === 0) {
+            return -1;
+        }
+        for (let index = messageModel.count - 1; index >= 0; index--) {
+            if (messageModel.get(index).messageId === messageId) {
+                return index;
+            }
+        }
+        return -1;
+    }
+
+    function failSubmission(submission, message) {
+        const index = submissionMessageIndex(submission);
+        if (index < 0) {
+            return;
+        }
+        messageModel.setProperty(index, "messageStatus", "failed");
+        messageModel.setProperty(index, "errorText", String(message
+            || "Codex could not send this message."));
     }
 
     function findAssistantMessage(itemId) {
@@ -1645,6 +1695,10 @@ Scope {
             submissionStarting = false;
             if (pending.kind === "turnStart") {
                 queuedSubmission = pending.context.submission;
+            }
+            if (pending.kind === "threadStart"
+                    || pending.kind === "turnStart") {
+                failSubmission(queuedSubmission, lastError);
             }
             return;
         }
@@ -1741,6 +1795,7 @@ Scope {
             if (currentThreadId.length === 0) {
                 submissionStarting = false;
                 lastError = "Codex did not return a thread ID.";
+                failSubmission(queuedSubmission, lastError);
                 return;
             }
             persistedThreadName = "";
@@ -1754,19 +1809,24 @@ Scope {
             const turn = payload.turn || {};
             currentTurnId = String(turn.id || payload.turnId || "");
             const submission = pending.context.submission;
-            if (messageModel.count === 0 && submission.text.length > 0) {
-                const fallbackTitle = submission.text
-                    .replace(/[\r\n\t]+/g, " ").trim();
-                currentTitle = fallbackTitle.length > 48
-                    ? fallbackTitle.slice(0, 48) + "…" : fallbackTitle;
-            }
             currentTurnAttachments = submission.attachments;
             const submittedHostPaths = submission.attachments
                 .map(item => item.hostPath);
             conversationHostFiles = conversationHostFiles
                 .concat(submittedHostPaths);
-            appendMessage("user", submission.text, "completed", currentThreadId,
-                currentTurnId, "", submission.attachments);
+            const userMessageIndex = submissionMessageIndex(submission);
+            if (userMessageIndex >= 0) {
+                messageModel.setProperty(
+                    userMessageIndex, "threadId", currentThreadId);
+                messageModel.setProperty(
+                    userMessageIndex, "turnId", currentTurnId);
+                messageModel.setProperty(
+                    userMessageIndex, "messageStatus", "completed");
+                messageModel.setProperty(userMessageIndex, "errorText", "");
+            } else {
+                appendMessage("user", submission.text, "completed",
+                    currentThreadId, currentTurnId, "", submission.attachments);
+            }
             appendTurnPlaceholder();
             queuedSubmission = null;
             submissionStarting = false;
@@ -1965,6 +2025,22 @@ Scope {
     }
 
     FileView {
+        id: preferencesFile
+
+        path: Quickshell.stateDir + "/ai-chat-preferences.json"
+        blockLoading: true
+        onAdapterUpdated: writeAdapter()
+
+        JsonAdapter {
+            id: chatPreferences
+
+            property string selectedModel: ""
+            property string selectedEffort: "default"
+            property string activityMode: "detailed"
+        }
+    }
+
+    FileView {
         id: exportStagingFile
 
         path: root.exportStagingName.length > 0
@@ -2053,9 +2129,12 @@ Scope {
             if (exitCode !== 0) {
                 if (context.kind === "turnStart") {
                     root.submissionStarting = false;
+                    root.lastError = "Could not prepare the private generated-file area.";
+                    root.failSubmission(root.queuedSubmission, root.lastError);
                     root.queuedSubmission = null;
+                } else {
+                    root.lastError = "Could not prepare the private generated-file area.";
                 }
-                root.lastError = "Could not prepare the private generated-file area.";
                 if (context.kind === "resumeRefresh") {
                     root.refreshArtifacts();
                 }
@@ -2363,6 +2442,8 @@ Scope {
                 root.pendingHydrationCursor = "";
                 if (root.submissionStarting) {
                     root.submissionStarting = false;
+                    root.failSubmission(root.queuedSubmission,
+                        root.lastError || "The Codex backend disconnected.");
                     root.queuedSubmission = null;
                 }
                 if (root.isGenerating) {
@@ -2451,6 +2532,7 @@ Scope {
             if (!transport.ready) {
                 root.lastError = "Codex is busy; retry when the backend is ready.";
                 root.submissionStarting = false;
+                root.failSubmission(root.queuedSubmission, root.lastError);
                 root.historyLoading = false;
                 root.historyLoadingMore = false;
                 root.historyOperation = "";
@@ -2461,6 +2543,8 @@ Scope {
             const requestId = transport.request(pending.method, pending.params);
             if (requestId < 0) {
                 root.submissionStarting = false;
+                root.failSubmission(root.queuedSubmission,
+                    "Codex is busy; retry when the backend is ready.");
                 root.historyLoading = false;
                 root.historyLoadingMore = false;
                 root.historyOperation = "";

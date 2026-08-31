@@ -424,8 +424,10 @@ Item {
                     && (messageStatus !== "completed"
                         || errorText.length > 0)
                 text: errorText.length > 0 ? errorText
-                    : messageStatus === "streaming"
-                        ? "Responding…" : messageStatus
+                    : messageStatus === "sending"
+                        ? "Sending…"
+                        : messageStatus === "streaming"
+                            ? "Responding…" : messageStatus
                 color: messageStatus === "failed"
                     || errorText.length > 0
                         ? Theme.red : "#777777"

@@ -54,6 +54,8 @@ shows the `sbx` authorization state, active Codex model and thinking level, and
 a compact circular send button that becomes a stop button while a response is
 streaming. Pasting while the composer is focused attaches a clipboard image
 without interfering with normal text paste.
+Accepted outgoing messages appear in the conversation immediately with a
+`Sending…` status while the backend starts the turn.
 
 Type `/` at the start of the composer or after existing draft text to open the
 command palette. Selecting an inline command removes only that command fragment
@@ -67,6 +69,8 @@ effort, and `/preset NAME` applies a configured model-and-thinking pair.
 conversation. `/activity compact` shows only the latest
 thinking or tool card while a response is running, then hides activity without
 discarding it; switching back to detailed reveals every card again.
+The selected model-and-thinking combination and activity mode persist across
+shell restarts.
 `/new` starts a clean chat without deleting the previous thread or its
 generated files. `/reconnect` reloads the chat-only kit and app-server.
 `/update` updates Codex inside the existing sandbox, then reconnects without
