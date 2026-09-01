@@ -23,6 +23,7 @@ They support application actions, and critical notifications remain visible unti
 - `topbar/` contains the bar and its controls.
 - `notifications/` contains the notification daemon and cards.
 - `ai-chat/` contains the AI chat UI, controller, helpers, tests, and chat kit.
+- `notes/` contains persistent note cards and pinned note windows.
 - `AppLauncher.qml` and `Theme.qml` remain shared at the configuration root.
 
 ## Launcher
@@ -43,6 +44,32 @@ Prefix richer expressions with `=` or `calc `, for example
 
 The picker can also be controlled through
 `qs -c main ipc call launcher show|hide|toggle`.
+
+## Notes
+
+Click the note icon in the top bar to open the anchored card grid beside it.
+Press `+` to create a note, then type directly in its card. Cards grow
+vertically with their text instead of scrolling internally; the grid scrolls
+when it exceeds the popup height. The header buttons pin or delete the note.
+Pinned notes become Hyprland-managed floating windows that remain above other
+windows, stay editable, grow with their text, and move when their header is
+dragged. Pinning again returns the note to the grid only.
+
+Notes are stored in Quickshell's state directory and survive shell reloads.
+The view can also be controlled through IPC:
+
+```sh
+qs -c main ipc call notes toggle
+qs -c main ipc call notes show
+qs -c main ipc call notes hide
+qs -c main ipc call notes add
+```
+
+For example, a Hyprland key binding can open the view with:
+
+```ini
+bind = SUPER, N, exec, qs -c main ipc call notes toggle
+```
 
 ## AI Quick Chat
 
@@ -270,6 +297,8 @@ Quickshell load arbitrary host files or remote image URLs. Only `http`,
   shown automatically when Ethernet is connected.
 - Language: shows the active keyboard layout as a two-letter language code and
   updates immediately when the layout changes.
+- Notes: click the note icon to open the anchored, editable card grid. Its
+  yellow dot indicates that at least one note is pinned.
 - Calendar: click the clock to open a monthly calendar. Use the arrows to move
   between months or click the month title to return to today.
 

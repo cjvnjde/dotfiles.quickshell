@@ -4,6 +4,7 @@ SoundControl 1.0 SoundControl.qml
 BluetoothControl 1.0 BluetoothControl.qml
 NetworkControl 1.0 NetworkControl.qml
 LanguageControl 1.0 LanguageControl.qml
+NotesControl 1.0 NotesControl.qml
 CalendarControl 1.0 CalendarControl.qml
 MediaControl 1.0 MediaControl.qml
 PrivacyIndicators 1.0 PrivacyIndicators.qml

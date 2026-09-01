@@ -7,6 +7,8 @@ import ".."
 PanelWindow {
     id: root
 
+    required property var notesController
+
     readonly property var hyprlandMonitor: Hyprland.monitorFor(screen)
 
     function refreshHyprlandState() {
@@ -127,6 +129,11 @@ PanelWindow {
         NetworkControl {}
 
         LanguageControl {}
+
+        NotesControl {
+            controller: root.notesController
+            screenName: root.screen.name
+        }
 
         Rectangle {
             visible: SystemTray.items.values.length > 0
