@@ -1,6 +1,7 @@
 import QtQuick
 import Quickshell
 import Quickshell.Io
+import ".."
 
 Scope {
     id: root
@@ -87,7 +88,7 @@ Scope {
         lastError = "";
         state = "selecting";
         Quickshell.execDetached({
-            command: ["bash", Quickshell.shellPath("AiCaptureRegion.sh")]
+            command: ["bash", Quickshell.shellPath("ai-chat/AiCaptureRegion.sh")]
         });
     }
 
@@ -117,7 +118,7 @@ Scope {
         lastError = "";
         state = "importing";
         const command = [
-            "bash", Quickshell.shellPath("AiAttachFile.sh"), request.mode
+            "bash", Quickshell.shellPath("ai-chat/AiAttachFile.sh"), request.mode
         ];
         Quickshell.execDetached({ command: command });
     }

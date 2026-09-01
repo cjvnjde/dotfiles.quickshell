@@ -18,6 +18,13 @@ The bar reserves 24 pixels at the top of every display. Notifications appear in
 the upper-right corner with an even six-pixel gap from the bar and screen edge.
 They support application actions, and critical notifications remain visible until dismissed.
 
+## Structure
+
+- `topbar/` contains the bar and its controls.
+- `notifications/` contains the notification daemon and cards.
+- `ai-chat/` contains the AI chat UI, controller, helpers, tests, and chat kit.
+- `AppLauncher.qml` and `Theme.qml` remain shared at the configuration root.
+
 ## Launcher
 
 Press `Super+T` to open the centered launcher. It fuzzy-searches desktop
@@ -85,8 +92,9 @@ without stopping an active response. A turn completed while visible sends no
 notification. A turn completed while hidden sends one privacy-safe desktop
 notification whose Open action restores the focused-screen chat and composer.
 
-Define presets in [`AiPresets.json`](AiPresets.json) using model IDs and
-thinking levels shown by `/model` and `/thinking`:
+Define presets in
+[`ai-chat/AiPresets.json`](ai-chat/AiPresets.json) using model IDs and thinking
+levels shown by `/model` and `/thinking`:
 
 ```json
 {
@@ -101,8 +109,9 @@ level exactly match it, including when those values were selected manually.
 Preset configuration stays on the host and is not copied into the sandbox.
 
 The feature owns one dedicated sandbox named `quickshell-ai-chat`, configured
-in [`AiConfig.qml`](AiConfig.qml). It creates that sandbox with `sbx create
-codex` and a mode-`0700` private workspace below Quickshell's state directory.
+in [`ai-chat/AiConfig.qml`](ai-chat/AiConfig.qml). It creates that sandbox with
+`sbx create codex` and a mode-`0700` private workspace below Quickshell's state
+directory.
 It never attaches the user's home or a project. Conversation history is the
 app-server's persisted thread store; the client neither mirrors nor rewrites
 transcripts. History queries require the exact chat working directory and only
@@ -123,7 +132,7 @@ sbx run codex
 The host needs the official Arch packages `quickshell`, `grim`, `slurp`,
 `wl-clipboard`, `file`, `zenity`, `libnotify`, and `python`, plus Docker
 Sandboxes (`sbx`).
-The bundled `AiSbx.sh` launcher resolves the official
+The bundled `ai-chat/AiSbx.sh` launcher resolves the official
 `~/.docker/sbx/bin/sbx` installation first, then `~/.local/bin/sbx`, then the
 inherited `PATH`. Set `QUICKSHELL_SBX_EXECUTABLE` to an absolute executable
 path to override detection.
@@ -142,13 +151,13 @@ or filesystem problems in a terminal, then run `/reconnect`.
 
 ### Chat-only instructions and skills
 
-[`AiChatKit`](AiChatKit) is the editable configuration copied into only the
-`quickshell-ai-chat` sandbox. Quickshell replaces
+[`ai-chat/AiChatKit`](ai-chat/AiChatKit) is the editable configuration copied
+into only the `quickshell-ai-chat` sandbox. Quickshell replaces
 `$HOME/quickshell-ai-chat-kit` from that folder before every app-server start
-and uses it as Codex's working directory. `AiChatKit/AGENTS.md` supplies the
-always-on custom instructions, including the managed final-output path
-`/home/agent/quickshell-ai-outputs`. Add chat-only skills as
-`AiChatKit/.agents/skills/<skill-name>/SKILL.md`; supporting scripts,
+and uses it as Codex's working directory. `ai-chat/AiChatKit/AGENTS.md`
+supplies the always-on custom instructions, including the managed final-output
+path `/home/agent/quickshell-ai-outputs`. Add chat-only skills as
+`ai-chat/AiChatKit/.agents/skills/<skill-name>/SKILL.md`; supporting scripts,
 references, and assets can stay beside each `SKILL.md`.
 
 Run `/reconnect` after editing the kit. Use `/new` as well when instructions

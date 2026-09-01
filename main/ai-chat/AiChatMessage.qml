@@ -1,6 +1,7 @@
 import QtQuick
 import QtQuick.Layouts
 import "AiChatLogic.js" as AiChatLogic
+import ".."
 
 Item {
 

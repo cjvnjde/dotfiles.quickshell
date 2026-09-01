@@ -1,5 +1,8 @@
 import QtQuick
 import Quickshell
+import "topbar"
+import "notifications"
+import "ai-chat"
 
 ShellRoot {
     Variants {

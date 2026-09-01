@@ -1,24 +1,2 @@
 singleton Theme 1.0 Theme.qml
-singleton AiConfig 1.0 AiConfig.qml
-CodexAppServer 1.0 CodexAppServer.qml
-ScreenshotService 1.0 ScreenshotService.qml
-singleton KeyboardLayout 1.0 KeyboardLayout.qml
-TopBar 1.0 TopBar.qml
-NotificationOverlay 1.0 NotificationOverlay.qml
-NotificationCard 1.0 NotificationCard.qml
-SoundControl 1.0 SoundControl.qml
-BluetoothControl 1.0 BluetoothControl.qml
-NetworkControl 1.0 NetworkControl.qml
-LanguageControl 1.0 LanguageControl.qml
-CalendarControl 1.0 CalendarControl.qml
-MediaControl 1.0 MediaControl.qml
-PrivacyIndicators 1.0 PrivacyIndicators.qml
 AppLauncher 1.0 AppLauncher.qml
-AiChat 1.0 AiChat.qml
-AiChatView 1.0 AiChatView.qml
-AiChatMessage 1.0 AiChatMessage.qml
-AiChatComposer 1.0 AiChatComposer.qml
-AiChatActionButton 1.0 AiChatActionButton.qml
-AiChatAttachment 1.0 AiChatAttachment.qml
-AiChatHistory 1.0 AiChatHistory.qml
-AiChatArtifact 1.0 AiChatArtifact.qml

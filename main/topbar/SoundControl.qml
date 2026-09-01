@@ -3,6 +3,7 @@ import Quickshell
 import Quickshell.Services.Mpris
 import Quickshell.Services.Pipewire
 import "AudioModel.js" as AudioModel
+import ".."
 
 Rectangle {
     id: root

@@ -1,4 +1,5 @@
 import QtQuick
+import ".."
 
 Rectangle {
     width: languageText.implicitWidth + Theme.controlHorizontalPadding * 2

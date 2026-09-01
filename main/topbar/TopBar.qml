@@ -2,6 +2,7 @@ import QtQuick
 import Quickshell
 import Quickshell.Hyprland
 import Quickshell.Services.SystemTray
+import ".."
 
 PanelWindow {
     id: root

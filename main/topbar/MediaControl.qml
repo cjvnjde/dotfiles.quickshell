@@ -1,6 +1,7 @@
 import QtQuick
 import Quickshell
 import Quickshell.Services.Mpris
+import ".."
 
 Item {
     id: root

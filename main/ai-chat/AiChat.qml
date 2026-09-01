@@ -2,6 +2,7 @@ import QtQuick
 import Quickshell
 import Quickshell.Io
 import "AiChatLogic.js" as AiChatLogic
+import ".."
 
 Scope {
     id: root
@@ -478,7 +479,7 @@ Scope {
         }
         shown = false;
         exportDialog.command = [
-            "python3", Quickshell.shellPath("AiFileDialog.py"), "export",
+            "python3", Quickshell.shellPath("ai-chat/AiFileDialog.py"), "export",
             AiConfig.exportStagingDirectory, exportStagingName,
             exportSuggestedName,
             exportToken
@@ -1154,7 +1155,7 @@ Scope {
             threadId: requestedThreadId
         }, context || {});
         prepareThreadOutputs.command = [
-            "bash", Quickshell.shellPath("AiPrepareOutputs.sh"),
+            "bash", Quickshell.shellPath("ai-chat/AiPrepareOutputs.sh"),
             resolvedSandboxName, AiConfig.sandboxWorkspace, requestedThreadId
         ];
         prepareThreadOutputs.running = true;
@@ -1171,7 +1172,7 @@ Scope {
         }
         outputIndexThreadId = currentThreadId;
         outputIndex.command = [
-            "python3", Quickshell.shellPath("AiOutputs.py"), "index",
+            "python3", Quickshell.shellPath("ai-chat/AiOutputs.py"), "index",
             AiConfig.sandboxOutputHostDirectory, currentThreadId
         ];
         outputIndex.running = true;
@@ -1209,7 +1210,7 @@ Scope {
         artifactSaveRestoreShown = shown;
         artifactSaveBusy = true;
         artifactSaveDialog.command = [
-            "python3", Quickshell.shellPath("AiFileDialog.py"), "artifact",
+            "python3", Quickshell.shellPath("ai-chat/AiFileDialog.py"), "artifact",
             AiConfig.sandboxWorkspace, currentThreadId, requestedPath,
             artifactSaveToken
         ];
@@ -1258,7 +1259,7 @@ Scope {
         }
         Quickshell.execDetached({
             command: [
-                "bash", Quickshell.shellPath("AiNotifyResponse.sh"),
+                "bash", Quickshell.shellPath("ai-chat/AiNotifyResponse.sh"),
                 notificationTitle()
             ]
         });
@@ -1859,7 +1860,7 @@ Scope {
             historyError = "";
             lastError = "";
             cleanupThreadOutputs.command = [
-                "python3", Quickshell.shellPath("AiOutputs.py"), "delete",
+                "python3", Quickshell.shellPath("ai-chat/AiOutputs.py"), "delete",
                 AiConfig.sandboxOutputHostDirectory, threadId
             ];
             cleanupThreadOutputs.running = true;
@@ -2020,7 +2021,7 @@ Scope {
     FileView {
         id: presetsFile
 
-        path: Quickshell.shellPath("AiPresets.json")
+        path: Quickshell.shellPath("ai-chat/AiPresets.json")
         blockLoading: true
     }
 
@@ -2220,7 +2221,7 @@ Scope {
         id: chatKitSync
 
         command: [
-            "bash", Quickshell.shellPath("AiChatKitSync.sh"),
+            "bash", Quickshell.shellPath("ai-chat/AiChatKitSync.sh"),
             root.resolvedSandboxName, AiConfig.sandboxWorkspace
         ]
         stderr: StdioCollector {}

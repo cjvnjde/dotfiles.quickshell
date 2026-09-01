@@ -2,11 +2,12 @@ pragma Singleton
 
 import QtQuick
 import Quickshell
+import ".."
 
 QtObject {
     readonly property string sandboxName: "quickshell-ai-chat"
     readonly property var sbxCommand: [
-        "bash", Quickshell.shellPath("AiSbx.sh")
+        "bash", Quickshell.shellPath("ai-chat/AiSbx.sh")
     ]
     readonly property string sandboxWorkspace: Quickshell.stateDir + "/ai-sandbox-workspace"
     readonly property string exportStagingDirectory: {
