@@ -19,6 +19,17 @@ def validate_thread_id(thread_id: str) -> None:
         raise ValueError("invalid thread ID")
 
 
+def output_path_parts(relative_path: str) -> tuple[str, ...]:
+    parts = relative_path.split("/")
+    if (
+        not relative_path
+        or relative_path.startswith("/")
+        or any(part in ("", ".", "..") for part in parts)
+    ):
+        raise ValueError("invalid output path")
+    return tuple(parts)
+
+
 def managed_output_root(root_value: str) -> Path:
     root = Path(root_value)
     root.mkdir(mode=0o700, parents=True, exist_ok=True)
@@ -116,6 +127,47 @@ def print_index(root_value: str, thread_id: str) -> None:
         print(json.dumps(item, ensure_ascii=False, separators=(",", ":")))
 
 
+def delete_output_file(
+    root_value: str, thread_id: str, relative_path: str
+) -> None:
+    validate_thread_id(thread_id)
+    path_parts = output_path_parts(relative_path)
+    root = managed_output_root(root_value)
+    root_fd = os.open(root, DIRECTORY_FLAGS)
+    try:
+        try:
+            directory_fd = os.open(thread_id, DIRECTORY_FLAGS, dir_fd=root_fd)
+        except FileNotFoundError:
+            return
+        try:
+            for component in path_parts[:-1]:
+                try:
+                    child_fd = os.open(
+                        component, DIRECTORY_FLAGS, dir_fd=directory_fd
+                    )
+                except FileNotFoundError:
+                    return
+                os.close(directory_fd)
+                directory_fd = child_fd
+
+            try:
+                file_fd = os.open(
+                    path_parts[-1], FILE_FLAGS, dir_fd=directory_fd
+                )
+            except FileNotFoundError:
+                return
+            try:
+                if not stat.S_ISREG(os.fstat(file_fd).st_mode):
+                    raise ValueError("output path is not a regular file")
+            finally:
+                os.close(file_fd)
+            os.unlink(path_parts[-1], dir_fd=directory_fd)
+        finally:
+            os.close(directory_fd)
+    finally:
+        os.close(root_fd)
+
+
 def delete_thread_outputs(root_value: str, thread_id: str) -> None:
     validate_thread_id(thread_id)
     root = managed_output_root(root_value)
@@ -144,6 +196,11 @@ def main() -> int:
             if len(sys.argv) != 3:
                 return 2
             managed_output_root(root_value)
+            return 0
+        if mode == "delete-file":
+            if len(sys.argv) != 5:
+                return 2
+            delete_output_file(root_value, sys.argv[3], sys.argv[4])
             return 0
         if len(sys.argv) != 4:
             return 2

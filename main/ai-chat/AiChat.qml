@@ -74,6 +74,9 @@ Scope {
     property bool artifactSaveRestoreShown: false
     property var outputPreparationContext: null
     property string outputIndexThreadId: ""
+    property string artifactDeleteThreadId: ""
+    property string artifactDeletePath: ""
+    readonly property bool artifactDeleteBusy: deleteArtifactFile.running
     property var notifiedTerminalTurnIds: []
     property var userInterruptedTurnIds: []
     property bool newChatPending: false
@@ -110,7 +113,7 @@ Scope {
         || pendingResumedSettings !== null || sandboxSetupRunning
         || modelCatalogLoading
         || syncingChatKit || codexUpdating || rebuildingSandbox
-        || historyBusy || exportBusy || artifactSaveBusy
+        || historyBusy || exportBusy || artifactSaveBusy || artifactDeleteBusy
         || prepareThreadOutputs.running || outputIndex.running
         || cleanupThreadOutputs.running
     readonly property bool canOpenHistory: transport.ready
@@ -118,6 +121,8 @@ Scope {
     readonly property bool canExport: messageModel.count > 0
         && !incompatibleActionRunning
     readonly property bool canSaveArtifacts: transport.ready
+        && !incompatibleActionRunning
+    readonly property bool canDeleteArtifacts: currentThreadId.length > 0
         && !incompatibleActionRunning
     readonly property string attachmentState: screenshot.state
     readonly property string attachmentFailureStage: screenshot.failureStage
@@ -733,8 +738,9 @@ Scope {
             || sandboxSetupRunning || syncingChatKit || codexUpdating
             || modelCatalogLoading || pendingResumedSettings !== null
             || rebuildingSandbox || historyBusy || exportBusy
-            || artifactSaveBusy || prepareThreadOutputs.running
-            || outputIndex.running || cleanupThreadOutputs.running;
+            || artifactSaveBusy || artifactDeleteBusy
+            || prepareThreadOutputs.running || outputIndex.running
+            || cleanupThreadOutputs.running;
     }
 
     function requestCodexUpdate() {
@@ -1261,6 +1267,42 @@ Scope {
             shown = true;
             Qt.callLater(() => focusComposer());
         }
+    }
+
+    function deleteArtifact(relativePath) {
+        const requestedPath = String(relativePath || "");
+        if (!canDeleteArtifacts || artifactIndex(requestedPath) < 0) {
+            lastError = "Wait for the current chat operation to finish before deleting a file.";
+            return;
+        }
+        artifactDeleteThreadId = currentThreadId;
+        artifactDeletePath = requestedPath;
+        deleteArtifactFile.command = [
+            "python3", Quickshell.shellPath("ai-chat/AiOutputs.py"),
+            "delete-file", AiConfig.sandboxOutputHostDirectory,
+            currentThreadId, requestedPath
+        ];
+        deleteArtifactFile.running = true;
+    }
+
+    function finishArtifactDelete(exitCode) {
+        const deletedThreadId = artifactDeleteThreadId;
+        const deletedPath = artifactDeletePath;
+        artifactDeleteThreadId = "";
+        artifactDeletePath = "";
+        if (deletedThreadId !== currentThreadId) {
+            return;
+        }
+        if (exitCode !== 0) {
+            lastError = "Could not delete the generated file.";
+            return;
+        }
+        const index = artifactIndex(deletedPath);
+        if (index >= 0) {
+            artifactModel.remove(index);
+        }
+        lastError = "";
+        showMaintenanceNotice("Generated file deleted");
     }
 
     function notificationTitle() {
@@ -2142,6 +2184,15 @@ Scope {
                 root.finishArtifactSave(root.artifactSaveToken, "failed",
                     "The generated-file save helper stopped unexpectedly.");
             }
+        }
+    }
+
+    Process {
+        id: deleteArtifactFile
+
+        stderr: StdioCollector {}
+        onExited: function(exitCode) {
+            root.finishArtifactDelete(exitCode);
         }
     }
 

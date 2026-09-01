@@ -56,11 +56,11 @@ is hovered, and show fenced code in separate blocks with their own copy icons.
 Thinking summaries, shell commands, file changes, searches, and other
 app-server tool items appear as
 live, expandable activity cards in detailed activity mode. Generated regular
-files appear in a compact card strip with a native Save action. The footer
-shows the `sbx` authorization state, active Codex model and thinking level, and
-a compact circular send button that becomes a stop button while a response is
-streaming. Pasting while the composer is focused attaches a clipboard image
-without interfering with normal text paste.
+files appear in a compact card strip with native Save and delete actions. The
+footer shows the `sbx` authorization state, active Codex model and thinking
+level, and a compact circular send button that becomes a stop button while a
+response is streaming. Pasting while the composer is focused attaches a
+clipboard image without interfering with normal text paste.
 Accepted outgoing messages appear in the conversation immediately with a
 `Sending…` status while the backend starts the turn.
 

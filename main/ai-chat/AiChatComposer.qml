@@ -206,6 +206,7 @@ Item {
                         Math.min(144, composer.contentHeight + 32))
 
                     Flickable {
+                        id: composerViewport
                         anchors {
                             fill: parent
                             leftMargin: 2
@@ -216,6 +217,23 @@ Item {
                         contentWidth: width
                         contentHeight: composer.contentHeight
                         clip: true
+
+                        function ensureCursorVisible(cursorRectangle) {
+                            if (height <= 0) {
+                                return;
+                            }
+
+                            if (cursorRectangle.y < contentY) {
+                                contentY = Math.max(0, cursorRectangle.y);
+                            } else if (cursorRectangle.y
+                                    + cursorRectangle.height
+                                    > contentY + height) {
+                                contentY = Math.min(
+                                    Math.max(0, contentHeight - height),
+                                    cursorRectangle.y
+                                        + cursorRectangle.height - height);
+                            }
+                        }
 
                         TextEdit {
                             id: composer
@@ -228,6 +246,9 @@ Item {
                             font.pixelSize: 15
 
                             onTextChanged: commandList.currentIndex = 0
+                            onCursorRectangleChanged:
+                                composerViewport.ensureCursorVisible(
+                                    cursorRectangle)
 
                             Text {
                                 visible: composer.text.length === 0

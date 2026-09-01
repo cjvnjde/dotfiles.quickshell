@@ -35,6 +35,48 @@ class ManagedOutputTests(unittest.TestCase):
             self.assertEqual(stat.S_IMODE(output_root.stat().st_mode), 0o700)
             self.assertEqual(stat.S_IMODE(thread_root.stat().st_mode), 0o700)
 
+    def test_delete_output_file_removes_only_the_requested_file(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            output_root = Path(temporary_directory) / "outputs"
+            AiOutputs.prepare_thread_outputs(str(output_root), "thread-1")
+            thread_root = output_root / "thread-1"
+            nested = thread_root / "nested"
+            nested.mkdir()
+            requested_file = nested / "result.txt"
+            requested_file.write_text("result\n", encoding="utf-8")
+            retained_file = thread_root / "keep.txt"
+            retained_file.write_text("keep\n", encoding="utf-8")
+
+            AiOutputs.delete_output_file(
+                str(output_root), "thread-1", "nested/result.txt"
+            )
+
+            self.assertFalse(requested_file.exists())
+            self.assertEqual(retained_file.read_text(encoding="utf-8"), "keep\n")
+
+    def test_delete_output_file_rejects_unmanaged_paths(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            output_root = Path(temporary_directory) / "outputs"
+            AiOutputs.prepare_thread_outputs(str(output_root), "thread-1")
+            thread_root = output_root / "thread-1"
+            outside_file = output_root / "outside.txt"
+            outside_file.write_text("outside\n", encoding="utf-8")
+            os.symlink(outside_file, thread_root / "outside-link")
+            (thread_root / "directory").mkdir()
+
+            for relative_path in (
+                "../outside.txt",
+                "outside-link",
+                "directory",
+            ):
+                with self.subTest(relative_path=relative_path):
+                    with self.assertRaises((OSError, ValueError)):
+                        AiOutputs.delete_output_file(
+                            str(output_root), "thread-1", relative_path
+                        )
+
+            self.assertEqual(outside_file.read_text(encoding="utf-8"), "outside\n")
+
     def test_source_open_rejects_escape_and_symlink_paths(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:
             workspace = Path(temporary_directory) / "workspace"

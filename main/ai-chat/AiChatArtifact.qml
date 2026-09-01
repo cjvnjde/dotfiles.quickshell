@@ -10,7 +10,7 @@ Rectangle {
     required property string sizeText
     required property string mimeType
 
-    width: 276
+    width: 310
     height: 62
     radius: 12
     color: "#202020"
@@ -84,6 +84,34 @@ Rectangle {
                 enabled: parent.enabled
                 hoverEnabled: true
                 onClicked: artifact.controller.saveArtifact(artifact.relativePath)
+            }
+        }
+
+        Rectangle {
+            Layout.preferredWidth: 28
+            Layout.preferredHeight: 28
+            radius: 8
+            color: deleteMouse.containsMouse && enabled ? "#3a2626" : "#303030"
+            opacity: enabled ? 1 : 0.38
+            enabled: artifact.controller.canDeleteArtifacts
+
+            Text {
+                anchors.centerIn: parent
+                text: artifact.controller.artifactDeleteBusy
+                        && artifact.controller.artifactDeletePath
+                            === artifact.relativePath ? "…" : "×"
+                color: Theme.red
+                font.family: Theme.fontFamily
+                font.pixelSize: 17
+            }
+
+            MouseArea {
+                id: deleteMouse
+                anchors.fill: parent
+                enabled: parent.enabled
+                hoverEnabled: true
+                onClicked: artifact.controller.deleteArtifact(
+                    artifact.relativePath)
             }
         }
     }
