@@ -29,6 +29,18 @@ test("preset commands resolve configured names", () => {
     );
 });
 
+test("window mode commands expose only the available transition", () => {
+    function modeCommands(pinned) {
+        return logic.commandItems(
+            "/", [], "", [], "", "detailed", [], pinned
+        ).map(item => item.label)
+            .filter(label => label === "/pin" || label === "/unpin");
+    }
+
+    assert.deepEqual(modeCommands(false), ["/pin"]);
+    assert.deepEqual(modeCommands(true), ["/unpin"]);
+});
+
 test("preset status requires both model and thinking to match", () => {
     const presets = [
         { name: "fast", model: "gpt-5.4", thinking: "low" }

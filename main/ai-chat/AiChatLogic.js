@@ -30,6 +30,18 @@ const COMMAND_CATALOG = [
         immediate: true
     },
     {
+        label: "/pin",
+        detail: "Keep chat open as a managed window",
+        draft: "/pin",
+        immediate: true
+    },
+    {
+        label: "/unpin",
+        detail: "Return chat to popup mode",
+        draft: "/unpin",
+        immediate: true
+    },
+    {
         label: "/model",
         detail: "Change model",
         draft: "/model ",
@@ -207,7 +219,7 @@ function removeCommandDraft(draft) {
 }
 
 function commandItems(draft, availableModels, selectedModel,
-        supportedEfforts, selectedEffort, activityMode, presets) {
+        supportedEfforts, selectedEffort, activityMode, presets, pinned) {
     const value = String(draft || "").replace(/^\s+/, "");
     const lowered = value.toLowerCase();
     if (lowered.indexOf("/model") === 0
@@ -295,8 +307,15 @@ function commandItems(draft, availableModels, selectedModel,
             || mode.label.toLowerCase().indexOf(query) >= 0);
     }
 
-    return COMMAND_CATALOG.filter(
-        command => command.label.indexOf(lowered) === 0);
+    return COMMAND_CATALOG.filter(command => {
+        if (command.label === "/pin" && pinned === true) {
+            return false;
+        }
+        if (command.label === "/unpin" && pinned !== true) {
+            return false;
+        }
+        return command.label.indexOf(lowered) === 0;
+    });
 }
 
 function safeAssistantMarkdown(value) {

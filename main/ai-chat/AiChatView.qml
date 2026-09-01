@@ -5,10 +5,18 @@ import Quickshell.Hyprland
 import Quickshell.Wayland
 import ".."
 
-Variants {
+Scope {
     id: view
 
     required property var controller
+    property var activePopupContentItem: null
+
+    function focusComposer() {
+        if (controller.shown && !controller.historyVisible
+                && card.parent !== null) {
+            Qt.callLater(() => composerPanel.focusComposer());
+        }
+    }
 
     component HeaderButton: Rectangle {
         property string label: ""
@@ -39,29 +47,66 @@ Variants {
         }
     }
 
-    model: Quickshell.screens
+    Variants {
+        model: Quickshell.screens
 
-    PanelWindow {
-        id: chatWindow
+        PanelWindow {
+            id: chatWindow
 
-        required property var modelData
-        readonly property var monitor: Hyprland.monitorFor(modelData)
-        readonly property bool focusedScreen: monitor !== null && monitor.focused
+            required property var modelData
+            readonly property var monitor: Hyprland.monitorFor(modelData)
+            readonly property bool focusedScreen: monitor !== null
+                && monitor.focused
 
-        screen: modelData
-        visible: view.controller.shown
-            && (focusedScreen || Quickshell.screens.length === 1)
-        color: "transparent"
-        exclusiveZone: 0
-        aboveWindows: true
+            screen: modelData
+            visible: view.controller.shown && !view.controller.pinned
+                && (focusedScreen || Quickshell.screens.length === 1)
+            color: "transparent"
+            exclusiveZone: 0
+            aboveWindows: true
 
-        anchors { top: true; bottom: true; left: true; right: true }
-        WlrLayershell.layer: WlrLayer.Overlay
-        WlrLayershell.keyboardFocus: WlrKeyboardFocus.Exclusive
+            anchors { top: true; bottom: true; left: true; right: true }
+            WlrLayershell.layer: WlrLayer.Overlay
+            WlrLayershell.keyboardFocus: WlrKeyboardFocus.Exclusive
+
+            onVisibleChanged: {
+                if (visible) {
+                    view.activePopupContentItem = contentItem;
+                    view.focusComposer();
+                }
+            }
+
+            Shortcut {
+                sequence: "Escape"
+                onActivated: view.controller.historyVisible
+                    ? view.controller.closeHistory() : view.controller.close()
+            }
+
+            MouseArea {
+                anchors.fill: parent
+                onClicked: view.controller.close()
+            }
+        }
+    }
+
+    FloatingWindow {
+        id: pinnedWindow
+
+        visible: view.controller.shown && view.controller.pinned
+        implicitWidth: AiConfig.chatWidth
+        implicitHeight: Math.min(AiConfig.chatMaxHeight, 860)
+        minimumSize: Qt.size(480, 360)
+        title: view.controller.currentTitle
+        color: "#171717"
 
         onVisibleChanged: {
-            if (visible && !view.controller.historyVisible) {
-                Qt.callLater(() => composerPanel.focusComposer());
+            if (visible) {
+                view.focusComposer();
+            }
+        }
+        onClosed: {
+            if (view.controller.pinned) {
+                view.controller.close();
             }
         }
 
@@ -70,292 +115,328 @@ Variants {
             onActivated: view.controller.historyVisible
                 ? view.controller.closeHistory() : view.controller.close()
         }
+    }
 
-        Connections {
-            target: view.controller
-            function onFocusComposer() {
-                if (chatWindow.visible && !view.controller.historyVisible) {
-                    Qt.callLater(() => composerPanel.focusComposer());
-                }
-            }
+    Connections {
+        target: view.controller
+        function onFocusComposer() {
+            view.focusComposer();
+        }
+    }
+
+    Rectangle {
+        id: card
+        readonly property bool windowed: view.controller.pinned
+        parent: windowed
+            ? pinnedWindow.contentItem : view.activePopupContentItem
+        visible: parent !== null
+
+        anchors.centerIn: parent
+        width: parent === null ? 0 : windowed
+            ? parent.width
+            : Math.min(AiConfig.chatWidth, parent.width - 48)
+        readonly property bool expanded: view.controller.conversationStarted
+            || view.controller.historyVisible
+        height: parent === null ? 0 : windowed
+            ? parent.height
+            : expanded
+                ? Math.min(AiConfig.chatMaxHeight, parent.height * 0.86)
+                : Math.min(Math.max(216, composerPanel.implicitHeight + 52),
+                    parent.height - 32)
+        radius: windowed ? 0 : expanded ? 24 : 30
+        color: "#171717"
+        border.width: windowed ? 0 : 1
+        border.color: "#3d3d3d"
+        clip: true
+
+        Behavior on height {
+            enabled: !card.windowed
+            NumberAnimation { duration: 160; easing.type: Easing.OutCubic }
         }
 
         MouseArea {
             anchors.fill: parent
-            onClicked: view.controller.close()
+            onClicked: mouse => mouse.accepted = true
         }
 
-        Rectangle {
-            id: card
+        ColumnLayout {
+            anchors.fill: parent
+            spacing: 0
 
-            anchors.centerIn: parent
-            width: Math.min(AiConfig.chatWidth, parent.width - 48)
-            readonly property bool expanded: view.controller.conversationStarted
-                || view.controller.historyVisible
-            height: expanded
-                ? Math.min(AiConfig.chatMaxHeight, parent.height * 0.86)
-                : Math.min(Math.max(216, composerPanel.implicitHeight + 52),
-                    parent.height - 32)
-            radius: expanded ? 24 : 30
-            color: "#171717"
-            border.width: 1
-            border.color: "#3d3d3d"
-            clip: true
+            Item {
+                Layout.fillWidth: true
+                Layout.preferredHeight: card.windowed ? 40 : 52
 
-            Behavior on height {
-                NumberAnimation { duration: 160; easing.type: Easing.OutCubic }
-            }
-
-            MouseArea {
-                anchors.fill: parent
-                onClicked: mouse => mouse.accepted = true
-            }
-
-            ColumnLayout {
-                anchors.fill: parent
-                spacing: 0
-
-                Item {
-                    Layout.fillWidth: true
-                    Layout.preferredHeight: 52
-
-                    Rectangle {
-                        width: 34
-                        height: 34
-                        anchors {
-                            left: parent.left
-                            verticalCenter: parent.verticalCenter
-                            leftMargin: 16
-                        }
-                        radius: 17
-                        color: closeMouse.containsMouse ? "#292929" : "transparent"
-
-                        Text {
-                            anchors.centerIn: parent
-                            text: "×"
-                            color: "#969696"
-                            font.family: Theme.fontFamily
-                            font.pixelSize: 23
-                            font.weight: Font.Light
-                        }
-                        MouseArea {
-                            id: closeMouse
-                            anchors.fill: parent
-                            hoverEnabled: true
-                            onClicked: view.controller.close()
-                        }
+                Rectangle {
+                    width: 34
+                    height: 34
+                    anchors {
+                        left: parent.left
+                        verticalCenter: parent.verticalCenter
+                        leftMargin: card.windowed ? 4 : 16
                     }
+                    radius: 17
+                    color: closeMouse.containsMouse ? "#292929" : "transparent"
 
                     Text {
                         anchors.centerIn: parent
-                        width: parent.width - 260
-                        text: view.controller.historyVisible
-                            ? "Saved conversations"
-                            : view.controller.currentTitle
-                        color: "#f2f2f2"
-                        elide: Text.ElideRight
-                        horizontalAlignment: Text.AlignHCenter
+                        text: "×"
+                        color: "#969696"
                         font.family: Theme.fontFamily
-                        font.pixelSize: 14
-                        font.weight: Font.DemiBold
+                        font.pixelSize: 23
+                        font.weight: Font.Light
                     }
-
-                    Row {
-                        anchors {
-                            right: parent.right
-                            rightMargin: 14
-                            verticalCenter: parent.verticalCenter
-                        }
-                        spacing: 4
-
-                        HeaderButton {
-                            label: view.controller.historyVisible
-                                ? "Chat" : "History"
-                            enabled: view.controller.historyVisible
-                                || view.controller.canOpenHistory
-                            onClicked: view.controller.historyVisible
-                                ? view.controller.closeHistory()
-                                : view.controller.openHistory()
-                        }
-
-                        HeaderButton {
-                            label: "Export"
-                            enabled: view.controller.canExport
-                                && !view.controller.historyVisible
-                            onClicked: view.controller.exportConversation()
-                        }
+                    MouseArea {
+                        id: closeMouse
+                        anchors.fill: parent
+                        hoverEnabled: true
+                        onClicked: view.controller.close()
                     }
                 }
 
-                ListView {
-                    id: messageList
+                Rectangle {
+                    width: 34
+                    height: 34
+                    anchors {
+                        left: parent.left
+                        verticalCenter: parent.verticalCenter
+                        leftMargin: card.windowed ? 42 : 54
+                    }
+                    radius: 17
+                    color: pinMouse.containsMouse || view.controller.pinned
+                        ? "#292929" : "transparent"
 
-                    Layout.fillWidth: true
-                    Layout.fillHeight: visible
-                    Layout.preferredHeight: visible ? -1 : 0
-                    Layout.leftMargin: 28
-                    Layout.rightMargin: 28
-                    Layout.topMargin: 12
-                    Layout.bottomMargin: view.controller.artifacts.count > 0
-                        ? 12 : 24
-                    visible: view.controller.conversationStarted
-                        && !view.controller.historyVisible
-                    model: view.controller.messages
-                    clip: true
-                    boundsBehavior: Flickable.StopAtBounds
-                    property bool followNewest: true
-
-                    function boundedContentY(value) {
-                        const minimum = originY;
-                        const maximum = minimum
-                            + Math.max(0, contentHeight - height);
-                        return Math.max(minimum, Math.min(maximum, value));
+                    Text {
+                        anchors.centerIn: parent
+                        text: view.controller.pinned ? "󰐃" : "󰤱"
+                        color: view.controller.pinned ? "#d5d5d5" : "#969696"
+                        font.family: Theme.fontFamily
+                        font.pixelSize: 17
                     }
 
-                    function scrollWheel(event) {
-                        const preciseDelta = event.pixelDelta.y;
-                        const distance = preciseDelta !== 0
-                            ? preciseDelta * 1.6
-                            : event.angleDelta.y / 120 * 150;
-                        if (distance === 0) {
-                            return;
-                        }
+                    MouseArea {
+                        id: pinMouse
+                        anchors.fill: parent
+                        hoverEnabled: true
+                        onClicked: view.controller.togglePinned()
+                    }
+                }
 
-                        const direction = Math.sign(distance);
-                        const previousDestination = wheelScroll.running
-                                && wheelDirection === direction
-                            ? wheelDestination : contentY;
-                        wheelScroll.stop();
-                        followNewest = false;
-                        if (preciseDelta !== 0) {
-                            contentY = boundedContentY(contentY - distance);
+                Text {
+                    anchors.centerIn: parent
+                    width: parent.width - 260
+                    text: view.controller.historyVisible
+                        ? "Saved conversations"
+                        : view.controller.currentTitle
+                    color: "#f2f2f2"
+                    elide: Text.ElideRight
+                    horizontalAlignment: Text.AlignHCenter
+                    font.family: Theme.fontFamily
+                    font.pixelSize: 14
+                    font.weight: Font.DemiBold
+                }
+
+                Row {
+                    anchors {
+                        right: parent.right
+                        rightMargin: 14
+                        verticalCenter: parent.verticalCenter
+                    }
+                    spacing: 4
+
+                    HeaderButton {
+                        label: view.controller.historyVisible
+                            ? "Chat" : "History"
+                        enabled: view.controller.historyVisible
+                            || view.controller.canOpenHistory
+                        onClicked: view.controller.historyVisible
+                            ? view.controller.closeHistory()
+                            : view.controller.openHistory()
+                    }
+
+                    HeaderButton {
+                        label: "Export"
+                        enabled: view.controller.canExport
+                            && !view.controller.historyVisible
+                        onClicked: view.controller.exportConversation()
+                    }
+                }
+            }
+
+            ListView {
+                id: messageList
+
+                Layout.fillWidth: true
+                Layout.fillHeight: visible
+                Layout.preferredHeight: visible ? -1 : 0
+                Layout.leftMargin: 28
+                Layout.rightMargin: 28
+                Layout.topMargin: card.windowed ? 4 : 12
+                Layout.bottomMargin: card.windowed
+                    ? 8 : view.controller.artifacts.count > 0 ? 12 : 24
+                visible: view.controller.conversationStarted
+                    && !view.controller.historyVisible
+                model: view.controller.messages
+                clip: true
+                boundsBehavior: Flickable.StopAtBounds
+                property bool followNewest: true
+
+                function boundedContentY(value) {
+                    const minimum = originY;
+                    const maximum = minimum
+                        + Math.max(0, contentHeight - height);
+                    return Math.max(minimum, Math.min(maximum, value));
+                }
+
+                function scrollWheel(event) {
+                    const preciseDelta = event.pixelDelta.y;
+                    const distance = preciseDelta !== 0
+                        ? preciseDelta * 1.6
+                        : event.angleDelta.y / 120 * 150;
+                    if (distance === 0) {
+                        return;
+                    }
+
+                    const direction = Math.sign(distance);
+                    const previousDestination = wheelScroll.running
+                            && wheelDirection === direction
+                        ? wheelDestination : contentY;
+                    wheelScroll.stop();
+                    followNewest = false;
+                    if (preciseDelta !== 0) {
+                        contentY = boundedContentY(contentY - distance);
+                        followNewest = atYEnd;
+                    } else {
+                        wheelDestination = boundedContentY(
+                            previousDestination - distance);
+                        wheelDirection = direction;
+                        const remainingDistance = Math.abs(
+                            wheelDestination - contentY);
+                        if (remainingDistance < 0.5) {
+                            contentY = wheelDestination;
+                            wheelDirection = 0;
                             followNewest = atYEnd;
                         } else {
-                            wheelDestination = boundedContentY(
-                                previousDestination - distance);
-                            wheelDirection = direction;
-                            const remainingDistance = Math.abs(
-                                wheelDestination - contentY);
-                            if (remainingDistance < 0.5) {
-                                contentY = wheelDestination;
-                                wheelDirection = 0;
-                                followNewest = atYEnd;
-                            } else {
-                                wheelScroll.from = contentY;
-                                wheelScroll.to = wheelDestination;
-                                wheelScroll.duration = Math.max(45, Math.min(
-                                    110, 110 * remainingDistance / 150));
-                                wheelScroll.restart();
+                            wheelScroll.from = contentY;
+                            wheelScroll.to = wheelDestination;
+                            wheelScroll.duration = Math.max(45, Math.min(
+                                110, 110 * remainingDistance / 150));
+                            wheelScroll.restart();
+                        }
+                    }
+                    event.accepted = true;
+                }
+
+                property real wheelDestination: contentY
+                property int wheelDirection: 0
+
+                NumberAnimation {
+                    id: wheelScroll
+                    target: messageList
+                    property: "contentY"
+                    duration: 110
+                    easing.type: Easing.OutCubic
+                    onStopped: {
+                        messageList.wheelDestination = messageList.contentY;
+                        messageList.wheelDirection = 0;
+                        messageList.followNewest = messageList.atYEnd;
+                    }
+                }
+
+                WheelHandler {
+                    target: null
+                    acceptedDevices: PointerDevice.Mouse
+                        | PointerDevice.TouchPad
+                    onWheel: event => messageList.scrollWheel(event)
+                }
+
+                onContentHeightChanged: {
+                    if (followNewest) {
+                        Qt.callLater(() => {
+                            if (followNewest) {
+                                positionViewAtEnd();
                             }
-                        }
-                        event.accepted = true;
-                    }
-
-                    property real wheelDestination: contentY
-                    property int wheelDirection: 0
-
-                    NumberAnimation {
-                        id: wheelScroll
-                        target: messageList
-                        property: "contentY"
-                        duration: 110
-                        easing.type: Easing.OutCubic
-                        onStopped: {
-                            messageList.wheelDestination = messageList.contentY;
-                            messageList.wheelDirection = 0;
-                            messageList.followNewest = messageList.atYEnd;
-                        }
-                    }
-
-                    WheelHandler {
-                        target: null
-                        acceptedDevices: PointerDevice.Mouse
-                            | PointerDevice.TouchPad
-                        onWheel: event => messageList.scrollWheel(event)
-                    }
-
-                    onContentHeightChanged: {
-                        if (followNewest) {
-                            Qt.callLater(() => {
-                                if (followNewest) {
-                                    positionViewAtEnd();
-                                }
-                            });
-                        }
-                    }
-                    onHeightChanged: {
-                        if (followNewest) {
-                            Qt.callLater(() => {
-                                if (followNewest) {
-                                    positionViewAtEnd();
-                                }
-                            });
-                        }
-                    }
-                    onMovementStarted: followNewest = false
-                    onMovementEnded: followNewest = atYEnd
-
-                    delegate: AiChatMessage {
-                        width: messageList.width
-                        controller: view.controller
+                        });
                     }
                 }
-
-                AiChatHistory {
-                    Layout.fillWidth: true
-                    Layout.fillHeight: visible
-                    Layout.preferredHeight: visible ? -1 : 0
-                    Layout.leftMargin: 24
-                    Layout.rightMargin: 24
-                    Layout.bottomMargin: 20
-                    visible: view.controller.historyVisible
-                    controller: view.controller
-                }
-
-                Item {
-                    Layout.fillWidth: true
-                    Layout.preferredHeight: visible ? 84 : 0
-                    Layout.leftMargin: 28
-                    Layout.rightMargin: 28
-                    visible: !view.controller.historyVisible
-                        && view.controller.artifacts.count > 0
-
-                    ColumnLayout {
-                        anchors.fill: parent
-                        spacing: 6
-
-                        Text {
-                            text: "Generated files"
-                            color: "#8f8f8f"
-                            font.family: Theme.fontFamily
-                            font.pixelSize: 11
-                            font.weight: Font.DemiBold
-                        }
-
-                        ListView {
-                            id: artifactList
-                            Layout.fillWidth: true
-                            Layout.fillHeight: true
-                            model: view.controller.artifacts
-                            orientation: ListView.Horizontal
-                            spacing: 8
-                            clip: true
-                            boundsBehavior: Flickable.StopAtBounds
-
-                            delegate: AiChatArtifact {
-                                controller: view.controller
+                onHeightChanged: {
+                    if (followNewest) {
+                        Qt.callLater(() => {
+                            if (followNewest) {
+                                positionViewAtEnd();
                             }
-                        }
+                        });
                     }
                 }
+                onMovementStarted: followNewest = false
+                onMovementEnded: followNewest = atYEnd
 
-                AiChatComposer {
-                    id: composerPanel
-                    visible: !view.controller.historyVisible
+                delegate: AiChatMessage {
+                    width: messageList.width
                     controller: view.controller
                 }
             }
-        }
 
+            AiChatHistory {
+                Layout.fillWidth: true
+                Layout.fillHeight: visible
+                Layout.preferredHeight: visible ? -1 : 0
+                Layout.leftMargin: 24
+                Layout.rightMargin: 24
+                Layout.bottomMargin: card.windowed ? 8 : 20
+                visible: view.controller.historyVisible
+                controller: view.controller
+            }
+
+            Item {
+                Layout.fillWidth: true
+                Layout.preferredHeight: visible ? 84 : 0
+                Layout.leftMargin: 28
+                Layout.rightMargin: 28
+                visible: !view.controller.historyVisible
+                    && view.controller.artifacts.count > 0
+
+                ColumnLayout {
+                    anchors.fill: parent
+                    spacing: 6
+
+                    Text {
+                        text: "Generated files"
+                        color: "#8f8f8f"
+                        font.family: Theme.fontFamily
+                        font.pixelSize: 11
+                        font.weight: Font.DemiBold
+                    }
+
+                    ListView {
+                        id: artifactList
+                        Layout.fillWidth: true
+                        Layout.fillHeight: true
+                        model: view.controller.artifacts
+                        orientation: ListView.Horizontal
+                        spacing: 8
+                        clip: true
+                        boundsBehavior: Flickable.StopAtBounds
+
+                        delegate: AiChatArtifact {
+                            controller: view.controller
+                        }
+                    }
+                }
+            }
+
+            Item {
+                Layout.fillWidth: true
+                Layout.fillHeight: true
+                visible: !view.controller.conversationStarted
+                    && !view.controller.historyVisible
+            }
+
+            AiChatComposer {
+                id: composerPanel
+                visible: !view.controller.historyVisible
+                controller: view.controller
+            }
+        }
     }
 }

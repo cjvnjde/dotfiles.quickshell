@@ -70,8 +70,10 @@ and preserves the rest of the draft. `/file` hides the chat and opens a
 foreground picker for PNG, JPEG, WebP, and text files. `/ps` captures a screen
 region, `/copy` copies the user and assistant transcript, and `/export` opens a
 native save dialog for an atomic Markdown export. `/history` opens persisted
-Codex threads. `/model` changes the active model, `/thinking` changes reasoning
-effort, and `/preset NAME` applies a configured model-and-thinking pair.
+Codex threads. `/pin` appears in popup mode and moves the chat into a managed
+window; `/unpin` appears there instead and returns it to the popup. `/model`
+changes the active model, `/thinking` changes reasoning effort, and
+`/preset NAME` applies a configured model-and-thinking pair.
 `/activity detailed` shows every thinking and tool card retained in the
 conversation. `/activity compact` shows only the latest
 thinking or tool card while a response is running, then hides activity without
@@ -175,12 +177,20 @@ dedicated sandbox and its thread store, resets the private host workspace and
 managed outputs, recreates the sandbox, updates Codex, and reloads the
 chat-only kit.
 
+The pin button beside the chat close button switches the centered overlay into
+a standard toplevel window managed by the compositor. While pinned, `ai toggle`
+keeps that single window open instead of opening or hiding another chat.
+Unpinning returns the same composer and conversation to the overlay; closing
+the chat resets it to unpinned mode.
+
 Available IPC calls are:
 
 ```sh
 qs -c main ipc call ai toggle
 qs -c main ipc call ai open
 qs -c main ipc call ai close
+qs -c main ipc call ai pin
+qs -c main ipc call ai unpin
 qs -c main ipc call ai screenshot
 qs -c main ipc call ai newChat
 qs -c main ipc call ai history

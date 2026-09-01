@@ -7,12 +7,16 @@ Item {
     id: composerRoot
 
     required property var controller
+    readonly property int contentBottomMargin: controller.conversationStarted
+        ? (controller.pinned ? 8 : 20) : 4
+    readonly property bool framed: controller.conversationStarted
+        || controller.pinned
 
     function commandItems(draft) {
         return AiChatLogic.commandItems(draft, controller.availableModels,
             controller.selectedModel, controller.supportedEfforts,
             controller.selectedEffort, controller.activityMode,
-            controller.presets);
+            controller.presets, controller.pinned);
     }
 
     function focusComposer() {
@@ -79,8 +83,8 @@ Item {
     }
 
     Layout.fillWidth: true
-    implicitHeight: composerStack.implicitHeight
-        + (controller.conversationStarted ? 20 : 4)
+    implicitHeight: composerStack.implicitHeight + contentBottomMargin
+    Layout.maximumHeight: implicitHeight
 
     ColumnLayout {
         id: composerStack
@@ -88,9 +92,9 @@ Item {
             left: parent.left
             right: parent.right
             bottom: parent.bottom
-            leftMargin: controller.conversationStarted ? 20 : 0
-            rightMargin: controller.conversationStarted ? 20 : 0
-            bottomMargin: controller.conversationStarted ? 20 : 4
+            leftMargin: composerRoot.framed ? 20 : 0
+            rightMargin: composerRoot.framed ? 20 : 0
+            bottomMargin: composerRoot.contentBottomMargin
         }
         spacing: 10
 
@@ -162,10 +166,11 @@ Item {
         Rectangle {
             id: composerFrame
             Layout.fillWidth: true
-            Layout.preferredHeight: composerInner.implicitHeight + 24
-            radius: controller.conversationStarted ? 22 : 28
-            color: controller.conversationStarted ? "#272727" : "transparent"
-            border.width: controller.conversationStarted ? 1 : 0
+            Layout.preferredHeight: composerInner.implicitHeight
+                + (controller.pinned ? 16 : 24)
+            radius: composerRoot.framed ? 22 : 28
+            color: composerRoot.framed ? "#272727" : "transparent"
+            border.width: composerRoot.framed ? 1 : 0
             border.color: "#343434"
 
             ColumnLayout {
@@ -174,9 +179,9 @@ Item {
                     left: parent.left
                     right: parent.right
                     top: parent.top
-                    leftMargin: controller.conversationStarted ? 12 : 20
-                    rightMargin: controller.conversationStarted ? 12 : 20
-                    topMargin: 12
+                    leftMargin: composerRoot.framed ? 12 : 20
+                    rightMargin: composerRoot.framed ? 12 : 20
+                    topMargin: controller.pinned ? 8 : 12
                 }
                 spacing: 8
 

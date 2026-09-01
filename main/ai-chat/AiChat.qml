@@ -8,6 +8,7 @@ Scope {
     id: root
 
     property bool shown: false
+    property bool pinned: false
     property string connectionState: transport.state
     property string statusText: statusForState(connectionState)
     property string currentThreadId: ""
@@ -341,6 +342,12 @@ Scope {
         case "/history":
             openHistory();
             break;
+        case "/pin":
+            setPinned(true);
+            break;
+        case "/unpin":
+            setPinned(false);
+            break;
         case "/model":
             chooseModel(argument);
             break;
@@ -650,6 +657,20 @@ Scope {
         Qt.callLater(() => focusComposer());
     }
 
+    function setPinned(value) {
+        if (pinned === value) {
+            return;
+        }
+        pinned = value;
+        if (shown) {
+            Qt.callLater(() => focusComposer());
+        }
+    }
+
+    function togglePinned() {
+        setPinned(!pinned);
+    }
+
     function startBackend() {
         if (resolvedSandboxName.length > 0) {
             continueBackendStartup();
@@ -818,9 +839,13 @@ Scope {
 
     function close() {
         shown = false;
+        pinned = false;
     }
 
     function toggle() {
+        if (shown && pinned) {
+            return;
+        }
         if (shown) {
             close();
         } else {
@@ -2567,6 +2592,8 @@ Scope {
         function toggle(): void { root.toggle(); }
         function open(): void { root.open(); }
         function close(): void { root.close(); }
+        function pin(): void { root.setPinned(true); root.open(); }
+        function unpin(): void { root.setPinned(false); }
         function screenshot(): void { root.captureRegion(); }
         function newChat(): void { root.newChat(); root.open(); }
         function history(): void {
