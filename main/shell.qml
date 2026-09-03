@@ -17,6 +17,7 @@ ShellRoot {
             required property var modelData
             screen: modelData
             notesController: notes
+            aiController: aiChat
         }
     }
 
@@ -24,5 +25,7 @@ ShellRoot {
 
     AppLauncher {}
 
-    AiChat {}
+    AiChat {
+        id: aiChat
+    }
 }

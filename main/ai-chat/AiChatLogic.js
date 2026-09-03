@@ -112,6 +112,27 @@ function modelStatusText(modelName, effortName, presetName) {
         + (preset.length > 0 ? " · " + preset : "");
 }
 
+function weeklyLimitRemainingPercent(payload) {
+    const rateLimits = payload && payload.rateLimits;
+    if (!rateLimits) {
+        return -1;
+    }
+
+    const windows = [rateLimits.primary, rateLimits.secondary];
+    const weeklyWindow = windows.find(window => window
+        && Number(window.windowDurationMins) === 7 * 24 * 60);
+    if (!weeklyWindow) {
+        return -1;
+    }
+
+    const usedPercent = Number(weeklyWindow.usedPercent);
+    if (!Number.isFinite(usedPercent)) {
+        return -1;
+    }
+
+    return Math.round(100 - Math.max(0, Math.min(100, usedPercent)));
+}
+
 function presetByName(presets, name) {
     const requested = String(name || "").trim().toLowerCase();
     const configured = Array.isArray(presets) ? presets : [];
@@ -1012,6 +1033,7 @@ if (typeof module !== "undefined") {
         conciseModelName,
         modelStatusText,
         presetByName,
+        weeklyLimitRemainingPercent,
         matchingPresetName,
         modelById,
         modelsFromPayload,

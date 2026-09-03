@@ -8,6 +8,12 @@ Scope {
 
     property string state: "disconnected"
     property string sandboxName: ""
+    property var launchCommand: sandboxName.length > 0
+        ? AiConfig.sbxCommand.concat([
+            "exec", "-i", sandboxName, "sh", "-lc",
+            "exec codex -c check_for_update_on_startup=false app-server"
+        ])
+        : []
     property string lastError: ""
     property int nextRequestId: 1
     property int reconnectAttempt: 0
@@ -24,9 +30,9 @@ Scope {
             return;
         }
 
-        if (sandboxName.length === 0) {
+        if (launchCommand.length === 0) {
             state = "error";
-            lastError = "No sbx sandbox is configured.";
+            lastError = "No Codex app-server command is configured.";
             return;
         }
 
@@ -103,10 +109,7 @@ Scope {
     Process {
         id: process
 
-        command: AiConfig.sbxCommand.concat([
-            "exec", "-i", root.sandboxName, "sh", "-lc",
-            "exec codex -c check_for_update_on_startup=false app-server"
-        ])
+        command: root.launchCommand
         stdinEnabled: true
 
         stdout: SplitParser {

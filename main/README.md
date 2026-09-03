@@ -73,6 +73,11 @@ bind = SUPER, N, exec, qs -c main ipc call notes toggle
 
 ## AI Quick Chat
 
+The AI backend starts with the shell so the sandbox and Codex connection are
+ready before the overlay opens. The AI control in the top bar shows startup
+state, then the remaining weekly Codex subscription percentage. Click it to
+open the chat.
+
 Press `Super+A` to open a compact AI chat overlay, or `Super+Shift+A` to select
 a screen region and attach its untouched PNG to a new prompt. The interface is
 a minimal dark composer that expands into the current conversation. Its header
@@ -298,6 +303,8 @@ Quickshell load arbitrary host files or remote image URLs. Only `http`,
   shown automatically when Ethernet is connected.
 - Language: shows the active keyboard layout as a two-letter language code and
   updates immediately when the layout changes.
+- AI: shows sandbox and Codex connection progress, then the remaining weekly
+  subscription allowance. Click it to open the chat.
 - Notes: click the note icon to open the anchored, editable card grid. Its
   yellow dot indicates that at least one note is pinned.
 - Calendar: click the clock to open a monthly calendar. Use the arrows to move

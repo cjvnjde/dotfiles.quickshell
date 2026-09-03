@@ -38,6 +38,29 @@ test("screenshot command uses a descriptive name", () => {
     assert.ok(!labels.includes("/ps"));
 });
 
+test("weekly limit reports the remaining seven-day allowance", () => {
+    assert.equal(logic.weeklyLimitRemainingPercent({
+        rateLimits: {
+            primary: {
+                usedPercent: 31,
+                windowDurationMins: 7 * 24 * 60
+            },
+            secondary: {
+                usedPercent: 80,
+                windowDurationMins: 300
+            }
+        }
+    }), 69);
+    assert.equal(logic.weeklyLimitRemainingPercent({
+        rateLimits: {
+            primary: {
+                usedPercent: 25,
+                windowDurationMins: 300
+            }
+        }
+    }), -1);
+});
+
 test("window mode commands expose only the available transition", () => {
     function modeCommands(pinned) {
         return logic.commandItems(

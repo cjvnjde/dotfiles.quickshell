@@ -8,6 +8,7 @@ PanelWindow {
     id: root
 
     required property var notesController
+    required property var aiController
 
     readonly property var hyprlandMonitor: Hyprland.monitorFor(screen)
 
@@ -129,6 +130,10 @@ PanelWindow {
         NetworkControl {}
 
         LanguageControl {}
+
+        AiChatControl {
+            controller: root.aiController
+        }
 
         NotesControl {
             controller: root.notesController
