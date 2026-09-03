@@ -15,8 +15,7 @@ Item {
     function commandItems(draft) {
         return AiChatLogic.commandItems(draft, controller.availableModels,
             controller.selectedModel, controller.supportedEfforts,
-            controller.selectedEffort, controller.activityMode,
-            controller.presets, controller.pinned);
+            controller.selectedEffort, controller.presets, controller.pinned);
     }
 
     function focusComposer() {

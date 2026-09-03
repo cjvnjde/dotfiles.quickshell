@@ -60,12 +60,6 @@ const COMMAND_CATALOG = [
         immediate: false
     },
     {
-        label: "/activity",
-        detail: "Choose detailed or compact activity",
-        draft: "/activity ",
-        immediate: false
-    },
-    {
         label: "/new",
         detail: "Start a new chat and keep this conversation",
         draft: "/new",
@@ -219,7 +213,7 @@ function removeCommandDraft(draft) {
 }
 
 function commandItems(draft, availableModels, selectedModel,
-        supportedEfforts, selectedEffort, activityMode, presets, pinned) {
+        supportedEfforts, selectedEffort, presets, pinned) {
     const value = String(draft || "").replace(/^\s+/, "");
     const lowered = value.toLowerCase();
     if (lowered.indexOf("/model") === 0
@@ -283,29 +277,6 @@ function commandItems(draft, availableModels, selectedModel,
         });
     }
 
-    if (lowered.indexOf("/activity") === 0
-            && (lowered.length === 9 || lowered.charAt(9) === " ")) {
-        const query = lowered.slice(9).trim();
-        return [
-            {
-                label: "Detailed",
-                detail: activityMode === "detailed"
-                    ? "Current mode — keep thinking and tool cards"
-                    : "Keep thinking and tool cards",
-                draft: "/activity detailed",
-                immediate: true
-            },
-            {
-                label: "Compact",
-                detail: activityMode === "compact"
-                    ? "Current mode — show only the latest activity"
-                    : "Show only the latest activity",
-                draft: "/activity compact",
-                immediate: true
-            }
-        ].filter(mode => query.length === 0
-            || mode.label.toLowerCase().indexOf(query) >= 0);
-    }
 
     return COMMAND_CATALOG.filter(command => {
         if (command.label === "/pin" && pinned === true) {
@@ -369,20 +340,6 @@ function markdownBlocks(value) {
     return blocks;
 }
 
-function textFromBlocks(value) {
-    if (!Array.isArray(value)) {
-        return typeof value === "string" ? value : "";
-    }
-    const parts = [];
-    for (const entry of value) {
-        if (typeof entry === "string") {
-            parts.push(entry);
-        } else if (entry && entry.text !== undefined) {
-            parts.push(String(entry.text));
-        }
-    }
-    return parts.join("\n\n");
-}
 
 function normalizedAttachmentName(value, fallback) {
     const name = String(value || fallback || "Attachment")
@@ -466,9 +423,7 @@ function persistedMessage(
         turnId: String(turnId || ""),
         itemId: String(itemId || ""),
         attachments: attachments || [],
-        activityType: "",
         activityTitle: "",
-        activityOutput: "",
         errorText: "",
         createdAt: createdAt
     };
@@ -495,8 +450,9 @@ function messagesFromTurns(turns, threadId) {
         const turnStatus = normalizedActivityStatus(turn.status, "completed");
         const createdAt = turnCreatedAt(turn);
         const items = Array.isArray(turn.items) ? turn.items : [];
-        let lastAssistantIndex = -1;
-        let hasTurnProgress = false;
+        let assistant = null;
+        let assistantIndex = -1;
+        let activeActivity = null;
 
         for (const item of items) {
             if (!item) {
@@ -580,10 +536,11 @@ function messagesFromTurns(turns, threadId) {
                 continue;
             }
             if (itemType === "agentMessage") {
-                messages.push(
-                    persistedMessage(
+                const part = String(item.text || "");
+                if (assistant === null) {
+                    assistant = persistedMessage(
                         "assistant",
-                        item.text || "",
+                        part,
                         turnStatus,
                         threadId,
                         turnId,
@@ -591,46 +548,32 @@ function messagesFromTurns(turns, threadId) {
                         [],
                         createdAt,
                         ordinal++
-                    )
-                );
-                lastAssistantIndex = messages.length - 1;
-                hasTurnProgress = true;
+                    );
+                    messages.push(assistant);
+                    assistantIndex = messages.length - 1;
+                } else {
+                    if (part.length > 0) {
+                        assistant.body += (assistant.body.length > 0 ? "\n\n" : "")
+                            + part;
+                    }
+                    if (itemId.length > 0) {
+                        assistant.itemId = itemId;
+                    }
+                }
+                activeActivity = null;
                 continue;
             }
-            if (!isActivityItem(item)) {
-                continue;
+            if (isActivityItem(item)
+                    && normalizedActivityStatus(item.status, "completed")
+                        === "streaming") {
+                activeActivity = item;
             }
-
-            const activity = persistedMessage(
-                "activity",
-                activityBody(item),
-                normalizedActivityStatus(item.status, turnStatus),
-                threadId,
-                turnId,
-                itemId,
-                [],
-                createdAt,
-                ordinal++
-            );
-            activity.activityType = itemType;
-            activity.activityTitle = activityTitle(item);
-            activity.activityOutput = activityOutput(item);
-            messages.push(activity);
-            hasTurnProgress = true;
         }
 
-        const failure = turn.error || {};
-        const failureMessage =
-            turnStatus === "failed"
-                ? String(failure.message || "The Codex turn failed.").slice(0, 600)
-                : "";
-        if (failureMessage.length > 0 && lastAssistantIndex >= 0) {
-            messages[lastAssistantIndex].errorText = failureMessage;
-        } else if (
-            (turnStatus === "failed" || turnStatus === "interrupted") &&
-            lastAssistantIndex < 0
-        ) {
-            const terminal = persistedMessage(
+        if (assistant === null
+                && (turnStatus === "streaming" || turnStatus === "failed"
+                    || turnStatus === "interrupted")) {
+            assistant = persistedMessage(
                 "assistant",
                 "",
                 turnStatus,
@@ -641,23 +584,21 @@ function messagesFromTurns(turns, threadId) {
                 createdAt,
                 ordinal++
             );
-            terminal.errorText = failureMessage;
-            messages.push(terminal);
-        } else if (turnStatus === "streaming" && !hasTurnProgress) {
-            const placeholder = persistedMessage(
-                "activity",
-                "",
-                "streaming",
-                threadId,
-                turnId,
-                "turn:" + turnId,
-                [],
-                createdAt,
-                ordinal++
-            );
-            placeholder.activityType = "turn";
-            placeholder.activityTitle = "Thinking";
-            messages.push(placeholder);
+            messages.push(assistant);
+            assistantIndex = messages.length - 1;
+        }
+        if (assistant !== null && turnStatus === "streaming") {
+            assistant.activityTitle = activeActivity === null
+                ? "thinking…" : loadingActivityText(activeActivity);
+        }
+
+        const failure = turn.error || {};
+        const failureMessage =
+            turnStatus === "failed"
+                ? String(failure.message || "The Codex turn failed.").slice(0, 600)
+                : "";
+        if (failureMessage.length > 0 && assistantIndex >= 0) {
+            messages[assistantIndex].errorText = failureMessage;
         }
     }
     return messages;
@@ -856,149 +797,55 @@ function historyUpdatedText(updatedAt, nowMilliseconds) {
     return new Date(timestamp).toISOString().slice(0, 10);
 }
 
-function prettyValue(value) {
-    if (value === undefined || value === null || value === "") {
-        return "";
-    }
-    if (typeof value === "string") {
-        return value;
-    }
-    try {
-        return JSON.stringify(value, null, 2);
-    } catch (error) {
-        return String(value);
-    }
-}
 
 function normalizedActivityStatus(value, fallback) {
     const status = String(value || fallback || "streaming");
     return status === "inProgress" ? "streaming" : status;
 }
 
-function activityStatusLabel(value) {
-    const status = normalizedActivityStatus(value, "");
-    if (status === "streaming") {
-        return "Running";
-    }
-    if (status === "completed") {
-        return "Done";
-    }
-    if (status === "failed") {
-        return "Failed";
-    }
-    if (status === "declined") {
-        return "Declined";
-    }
-    if (status === "interrupted") {
-        return "Stopped";
-    }
-    return titleCase(status);
-}
 
-function activityTitle(item) {
-    const type = String(item && item.type || "activity");
+function loadingActivityText(item) {
+    const type = String(item && item.type || "");
     if (type === "turn" || type === "reasoning") {
-        return "Thinking";
+        return "thinking…";
     }
     if (type === "plan") {
-        return "Planning";
+        return "planning…";
     }
     if (type === "commandExecution") {
-        return "Shell command";
+        return "running command…";
     }
     if (type === "fileChange") {
-        return "Editing files";
-    }
-    if (type === "mcpToolCall") {
-        const context = item.appContext || {};
-        const owner = String(context.appName || item.server || "Tool");
-        const action = String(context.actionName || item.tool || "");
-        return action.length > 0 ? owner + ": " + action : owner;
-    }
-    if (type === "collabToolCall") {
-        return "Agent: " + String(item.tool || "collaboration");
+        return "editing files…";
     }
     if (type === "webSearch") {
-        return "Web search";
+        return "searching web…";
     }
     if (type === "imageGeneration") {
-        return "Generating image";
+        return "generating image…";
     }
     if (type === "imageView") {
-        return "Viewing image";
+        return "viewing image…";
     }
     if (type === "sleep") {
-        return "Waiting";
+        return "waiting…";
     }
     if (type === "contextCompaction") {
-        return "Compacting conversation";
-    }
-    if (type === "enteredReviewMode") {
-        return "Reviewing";
-    }
-    if (type === "exitedReviewMode") {
-        return "Review complete";
-    }
-    if (type === "dynamicToolCall") {
-        return "Tool: " + String(item.tool || "call");
-    }
-    return titleCase(type.replace(/([a-z0-9])([A-Z])/g, "$1 $2"));
-}
-
-function activityBody(item) {
-    const type = String(item && item.type || "");
-    if (type === "reasoning") {
-        return textFromBlocks(item.summary) || textFromBlocks(item.content);
-    }
-    if (type === "plan") {
-        return String(item.text || "");
-    }
-    if (type === "commandExecution") {
-        const command = String(item.command || "");
-        return command.length > 0 ? "$ " + command : "";
-    }
-    if (type === "fileChange") {
-        const changes = Array.isArray(item.changes) ? item.changes : [];
-        return changes.map(change => {
-            const kind = String(change.kind || "change");
-            return titleCase(kind) + ": " + String(change.path || "");
-        }).join("\n");
-    }
-    if (type === "mcpToolCall" || type === "dynamicToolCall") {
-        return prettyValue(item.arguments);
-    }
-    if (type === "collabToolCall") {
-        return String(item.prompt || item.agentStatus || "");
-    }
-    if (type === "webSearch") {
-        return String(item.query || prettyValue(item.action));
-    }
-    if (type === "imageView") {
-        return String(item.path || "");
-    }
-    if (type === "imageGeneration") {
-        return String(item.revisedPrompt || "");
-    }
-    if (type === "sleep") {
-        const duration = Number(item.durationMs || 0);
-        return duration > 0
-            ? "Waiting " + (duration / 1000).toFixed(1) + " seconds" : "";
+        return "compacting conversation…";
     }
     if (type === "enteredReviewMode" || type === "exitedReviewMode") {
-        return String(item.review || "");
+        return "reviewing…";
     }
-    return "";
+    if (type === "mcpToolCall" || type === "dynamicToolCall") {
+        return "using tool…";
+    }
+    if (type === "collabToolCall") {
+        return "working with agent…";
+    }
+    return "working…";
 }
 
-function activityOutput(item) {
-    if (String(item && item.type || "") === "commandExecution") {
-        return String(item.aggregatedOutput || "");
-    }
-    if (String(item && item.type || "") === "mcpToolCall") {
-        return prettyValue(item.error || item.result);
-    }
-    return "";
-}
+
 
 function isActivityItem(item) {
     const type = String(item && item.type || "");
@@ -1021,7 +868,7 @@ if (typeof module !== "undefined") {
         commandItems,
         safeAssistantMarkdown,
         markdownBlocks,
-        textFromBlocks,
+        loadingActivityText,
         normalizedAttachmentName,
         attachmentMetadataInput,
         attachmentFromMetadataInput,
@@ -1033,12 +880,6 @@ if (typeof module !== "undefined") {
         threadTitle,
         threadStatusText,
         historyUpdatedText,
-        prettyValue,
-        normalizedActivityStatus,
-        activityStatusLabel,
-        activityTitle,
-        activityBody,
-        activityOutput,
         isActivityItem
     };
 }

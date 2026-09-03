@@ -80,21 +80,22 @@ same sandbox and its credential proxy. It shows `Ready` when the proxy does not
 expose subscription limits. Click the control to open the chat.
 
 Press `Super+A` to open a compact AI chat overlay, or `Super+Shift+A` to select
-a screen region and attach its untouched PNG to a new prompt. The interface is
-a minimal dark composer that expands into the current conversation. Its header
-opens persisted conversation history and exports the loaded conversation as
-Markdown. Assistant answers render as Markdown, open web and email links
-externally, provide an icon-only whole-answer copy action only while the answer
-is hovered, and show fenced code in separate blocks with their own copy icons.
-Thinking summaries, shell commands, file changes, searches, and other
-app-server tool items appear as
-live, expandable activity cards in detailed activity mode. Generated regular
-files appear in a compact card strip with native Save and delete actions. The
-footer shows the `sbx` authorization state, active Codex model and thinking
-level, and a compact circular send button that becomes a stop button while a
-response is streaming. Pasting while the composer is focused attaches a
-clipboard image without interfering with normal text paste.
-Accepted outgoing messages appear in the conversation immediately with a
+a screen region and attach its untouched PNG to a new prompt.
+The interface is a minimal dark composer that expands into the current
+conversation. Its header opens persisted conversation history and exports the
+loaded conversation as Markdown. All assistant output from one turn renders as
+one Markdown response. Web and email links open externally, use a brighter
+browser-style blue, and underline only while hovered. An icon-only whole-answer
+copy action appears while a completed answer is hovered, and fenced code renders
+in separate blocks with its own copy icons. While Codex is reasoning or using a
+tool, a small muted animated text label shows the current work and disappears
+when that work finishes; reasoning, command, and tool details are not retained
+as visible blocks. Generated regular files appear in a compact card strip with
+native Save and delete actions. The footer shows the `sbx` authorization state,
+active Codex model and thinking level, and a compact circular send button that
+becomes a stop button while a response is streaming. Pasting while the composer
+is focused attaches a clipboard image without interfering with normal text
+paste. Accepted outgoing messages appear in the conversation immediately with a
 `Sending…` status while the backend starts the turn.
 
 Type `/` at the start of the composer or after existing draft text to open the
@@ -107,13 +108,8 @@ opens persisted Codex threads. `/pin` appears in popup mode and moves the chat
 into a managed
 window; `/unpin` appears there instead and returns it to the popup. `/model`
 changes the active model, `/thinking` changes reasoning effort, and
-`/preset NAME` applies a configured model-and-thinking pair.
-`/activity detailed` shows every thinking and tool card retained in the
-conversation. `/activity compact` shows only the latest
-thinking or tool card while a response is running, then hides activity without
-discarding it; switching back to detailed reveals every card again.
-The selected model-and-thinking combination and activity mode persist across
-shell restarts.
+`/preset NAME` applies a configured model-and-thinking pair. The selected
+model-and-thinking combination persists across shell restarts.
 `/new` starts a clean chat without deleting the previous thread or its
 generated files. `/reconnect` reloads the chat-only kit and app-server.
 `/update` updates Codex inside the existing sandbox, then reconnects without

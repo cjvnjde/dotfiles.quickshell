@@ -13,26 +13,19 @@ Item {
     required property string errorText
     required property string itemId
     required property string turnId
-    required property string activityType
     required property string activityTitle
-    required property string activityOutput
     required property var attachments
-    property bool activityExpanded: false
     property bool answerCopied: false
     readonly property int attachmentCount: attachments
         && attachments.count !== undefined
             ? attachments.count
             : attachments && attachments.length
                 ? attachments.length : 0
-    readonly property bool activityVisible: role !== "activity"
-        || controller.activityMode === "detailed"
-        || (controller.isGenerating && turnId === controller.currentTurnId
-            && itemId === controller.latestActivityItemId)
     readonly property bool answerCopyAvailable: role === "assistant"
         && messageStatus !== "streaming"
         && body.length > 0
         && AiChatLogic.isAssistantResponseTail(controller.messages, index)
-    readonly property real topSpacing: activityVisible && index > 0 ? 24 : 0
+    readonly property real topSpacing: index > 0 ? 24 : 0
 
     function syncAssistantBlocks() {
         if (role !== "assistant" || body.length === 0) {
@@ -72,9 +65,7 @@ Item {
     ListModel {
         id: assistantBlockModel
     }
-    visible: activityVisible
-    implicitHeight: activityVisible
-        ? messageBubble.implicitHeight + topSpacing : 0
+    implicitHeight: messageBubble.implicitHeight + topSpacing
 
     TextMetrics {
         id: messageMetrics
@@ -121,8 +112,7 @@ Item {
             TextEdit {
                 Layout.fillWidth: true
                 Layout.preferredHeight: visible ? contentHeight : 0
-                visible: role !== "assistant" && role !== "activity"
-                    && body.length > 0
+                visible: role !== "assistant" && body.length > 0
                 text: body
                 textFormat: Text.PlainText
                 wrapMode: Text.Wrap
@@ -135,119 +125,31 @@ Item {
                 selectByMouse: true
             }
 
-            Rectangle {
-                id: activityCard
-                readonly property string detailText: body
-                    + (activityOutput.length > 0
-                        ? (body.length > 0 ? "\n\n" : "") + activityOutput
-                        : "")
-
+            Text {
                 Layout.fillWidth: true
-                Layout.preferredHeight: visible
-                    ? activityLayout.implicitHeight + 24 : 0
-                visible: role === "activity"
-                radius: 12
-                color: "#202020"
-                border.width: 1
-                border.color: "#343434"
+                Layout.preferredHeight: visible ? implicitHeight : 0
+                visible: role === "assistant"
+                    && messageStatus === "streaming"
+                    && activityTitle.length > 0
+                text: activityTitle
+                color: "#777777"
+                opacity: 0.58
+                font.family: Theme.fontFamily
+                font.pixelSize: 11
 
-                ColumnLayout {
-                    id: activityLayout
-                    anchors {
-                        left: parent.left
-                        right: parent.right
-                        top: parent.top
-                        margins: 12
+                SequentialAnimation on opacity {
+                    running: parent.visible
+                    loops: Animation.Infinite
+                    NumberAnimation {
+                        to: 0.3
+                        duration: 700
+                        easing.type: Easing.InOutSine
                     }
-                    spacing: 8
-
-                    RowLayout {
-                        Layout.fillWidth: true
-                        spacing: 10
-
-                        Rectangle {
-                            Layout.preferredWidth: 9
-                            Layout.preferredHeight: 9
-                            radius: 5
-                            color: messageStatus === "failed"
-                                || messageStatus === "declined"
-                                    ? Theme.red
-                                    : messageStatus === "completed"
-                                        ? Theme.green : Theme.blue
-
-                            SequentialAnimation on opacity {
-                                running: activityCard.visible
-                                    && messageStatus === "streaming"
-                                loops: Animation.Infinite
-                                NumberAnimation {
-                                    to: 0.3
-                                    duration: 520
-                                    easing.type: Easing.InOutSine
-                                }
-                                NumberAnimation {
-                                    to: 1
-                                    duration: 520
-                                    easing.type: Easing.InOutSine
-                                }
-                            }
-                        }
-
-                        Text {
-                            Layout.fillWidth: true
-                            text: activityTitle
-                            color: "#e8e8e8"
-                            elide: Text.ElideRight
-                            font.family: Theme.fontFamily
-                            font.pixelSize: 13
-                            font.weight: Font.DemiBold
-                        }
-
-                        Text {
-                            text: AiChatLogic.activityStatusLabel(messageStatus)
-                            color: messageStatus === "failed"
-                                || messageStatus === "declined"
-                                    ? Theme.red : "#858585"
-                            font.family: Theme.fontFamily
-                            font.pixelSize: 11
-                        }
-
-                        Text {
-                            visible: activityCard.detailText.length > 0
-                            text: "›"
-                            rotation: activityExpanded ? 90 : 0
-                            color: "#858585"
-                            font.family: Theme.fontFamily
-                            font.pixelSize: 18
-
-                            Behavior on rotation {
-                                NumberAnimation {
-                                    duration: 100
-                                    easing.type: Easing.OutCubic
-                                }
-                            }
-                        }
+                    NumberAnimation {
+                        to: 0.58
+                        duration: 700
+                        easing.type: Easing.InOutSine
                     }
-
-                    Text {
-                        Layout.fillWidth: true
-                        visible: activityCard.detailText.length > 0
-                        text: activityCard.detailText
-                        color: "#aaaaaa"
-                        wrapMode: Text.WrapAnywhere
-                        maximumLineCount: activityExpanded ? 1000 : 5
-                        elide: Text.ElideRight
-                        font.family: Theme.fontFamily
-                        font.pixelSize: 12
-                        lineHeight: 1.15
-                    }
-                }
-
-                MouseArea {
-                    anchors.fill: parent
-                    enabled: activityCard.detailText.length > 0
-                    cursorShape: enabled
-                        ? Qt.PointingHandCursor : Qt.ArrowCursor
-                    onClicked: activityExpanded = !activityExpanded
                 }
             }
 
@@ -269,6 +171,59 @@ Item {
                         spacing: 0
 
                         TextEdit {
+                            id: assistantMarkdown
+
+                            property var linkRanges: []
+
+                            function discoverLinkRanges() {
+                                const ranges = [];
+                                let activeHref = "";
+                                let activeStart = -1;
+                                for (let position = 0; position < length; position++) {
+                                    const character = positionToRectangle(position);
+                                    const href = String(linkAt(
+                                        character.x + 2,
+                                        character.y + character.height / 2
+                                    ) || "");
+                                    if (href === activeHref) {
+                                        continue;
+                                    }
+                                    if (activeHref.length > 0) {
+                                        ranges.push({
+                                            href: activeHref,
+                                            start: activeStart,
+                                            end: position
+                                        });
+                                    }
+                                    activeHref = href;
+                                    activeStart = href.length > 0 ? position : -1;
+                                }
+                                if (activeHref.length > 0) {
+                                    ranges.push({
+                                        href: activeHref,
+                                        start: activeStart,
+                                        end: length
+                                    });
+                                }
+                                linkRanges = ranges;
+                            }
+
+                            function styleLinks(hoveredHref) {
+                                if (!visible) {
+                                    linkRanges = [];
+                                    return;
+                                }
+                                discoverLinkRanges();
+                                for (const range of linkRanges) {
+                                    linkStyling.selectionStart = range.start;
+                                    linkStyling.selectionEnd = range.end;
+                                    linkStyling.color = "#8ab4f8";
+                                    const linkFont = linkStyling.font;
+                                    linkFont.underline = range.href === hoveredHref;
+                                    linkStyling.font = linkFont;
+                                }
+                            }
+
                             Layout.fillWidth: true
                             Layout.preferredHeight: visible
                                 ? contentHeight : 0
@@ -285,7 +240,26 @@ Item {
                             font.pixelSize: 15
                             readOnly: true
                             selectByMouse: true
+                            onTextChanged: linkStyleTimer.restart()
+                            onVisibleChanged: {
+                                if (visible) {
+                                    linkStyleTimer.restart();
+                                }
+                            }
+                            onLinkHovered: link => styleLinks(String(link || ""))
                             onLinkActivated: link => controller.openLink(link)
+
+                            TextSelection {
+                                id: linkStyling
+                                document: assistantMarkdown.textDocument
+                            }
+
+                            Timer {
+                                id: linkStyleTimer
+                                interval: 50
+                                onTriggered: assistantMarkdown.styleLinks(
+                                    assistantMarkdown.hoveredLink)
+                            }
                         }
 
                         Rectangle {
@@ -421,14 +395,13 @@ Item {
 
             Text {
                 Layout.preferredHeight: visible ? implicitHeight : 0
-                visible: role !== "activity"
-                    && (messageStatus !== "completed"
-                        || errorText.length > 0)
+                visible: errorText.length > 0
+                    || messageStatus === "sending"
+                    || (role === "assistant"
+                        && messageStatus !== "streaming"
+                        && messageStatus !== "completed")
                 text: errorText.length > 0 ? errorText
-                    : messageStatus === "sending"
-                        ? "Sending…"
-                        : messageStatus === "streaming"
-                            ? "Responding…" : messageStatus
+                    : messageStatus === "sending" ? "Sending…" : messageStatus
                 color: messageStatus === "failed"
                     || errorText.length > 0
                         ? Theme.red : "#777777"

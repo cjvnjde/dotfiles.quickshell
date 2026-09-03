@@ -12,13 +12,13 @@ test("preset commands resolve configured names", () => {
     assert.equal(logic.presetByName(presets, "FAST"), presets[0]);
     assert.deepEqual(
         logic.commandItems(
-            "/preset", [], "gpt-5.4", ["low"], "low", "detailed", presets
+            "/preset", [], "gpt-5.4", ["low"], "low", presets
         ).map(item => item.label),
         ["fast", "deep"]
     );
     assert.deepEqual(
         logic.commandItems(
-            "/preset f", [], "gpt-5.4", ["low"], "low", "detailed", presets
+            "/preset f", [], "gpt-5.4", ["low"], "low", presets
         ),
         [{
             label: "fast",
@@ -31,17 +31,18 @@ test("preset commands resolve configured names", () => {
 
 test("screenshot command uses a descriptive name", () => {
     const labels = logic.commandItems(
-        "/", [], "", [], "", "detailed", [], false
+        "/", [], "", [], "", [], false
     ).map(item => item.label);
 
     assert.ok(labels.includes("/screenshot"));
     assert.ok(!labels.includes("/ps"));
+    assert.ok(!labels.includes("/activity"));
 });
 
 test("window mode commands expose only the available transition", () => {
     function modeCommands(pinned) {
         return logic.commandItems(
-            "/", [], "", [], "", "detailed", [], pinned
+            "/", [], "", [], "", [], pinned
         ).map(item => item.label)
             .filter(label => label === "/pin" || label === "/unpin");
     }
@@ -161,7 +162,9 @@ test("messagesFromTurns hydrates attachments and terminal turn states", () => {
                     ]
                 },
                 { id: "reasoning", type: "reasoning", summary: ["Checked"] },
-                { id: "answer", type: "agentMessage", text: "Done" }
+                { id: "answer-one", type: "agentMessage", text: "First" },
+                { id: "command", type: "commandExecution", status: "completed" },
+                { id: "answer-two", type: "agentMessage", text: "Done" }
             ]
         },
         {
@@ -180,7 +183,7 @@ test("messagesFromTurns hydrates attachments and terminal turn states", () => {
     const messages = logic.messagesFromTurns(turns, "thread-one");
     assert.deepEqual(
         messages.map((message) => message.role),
-        ["user", "activity", "assistant", "assistant", "assistant"]
+        ["user", "assistant", "assistant", "assistant"]
     );
     assert.equal(messages[0].body, "multiline\nrequest");
     assert.deepEqual(
@@ -188,9 +191,10 @@ test("messagesFromTurns hydrates attachments and terminal turn states", () => {
         ["chart.png", "notes.txt"]
     );
     assert.ok(messages[0].attachments.every((attachment) => attachment.hostPath === ""));
-    assert.equal(messages[3].messageStatus, "failed");
-    assert.equal(messages[3].errorText, "Backend failed");
-    assert.equal(messages[4].messageStatus, "interrupted");
+    assert.equal(messages[1].body, "First\n\nDone");
+    assert.equal(messages[2].messageStatus, "failed");
+    assert.equal(messages[2].errorText, "Backend failed");
+    assert.equal(messages[3].messageStatus, "interrupted");
     assert.doesNotMatch(JSON.stringify(messages), /private\.(png|txt)/);
 });
 
@@ -201,9 +205,20 @@ test("messagesFromTurns represents an in-progress turn without eager duplication
 
     assert.deepEqual(first, second);
     assert.equal(first.length, 1);
-    assert.equal(first[0].role, "activity");
+    assert.equal(first[0].role, "assistant");
     assert.equal(first[0].messageStatus, "streaming");
-    assert.equal(first[0].itemId, "turn:active");
+    assert.equal(first[0].activityTitle, "thinking…");
+});
+
+test("activity labels stay terse while work is in progress", () => {
+    assert.equal(
+        logic.loadingActivityText({ type: "reasoning" }),
+        "thinking…"
+    );
+    assert.equal(
+        logic.loadingActivityText({ type: "commandExecution" }),
+        "running command…"
+    );
 });
 
 test("assistant responses expose one tail action and copy every answer part", () => {

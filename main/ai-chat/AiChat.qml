@@ -22,14 +22,13 @@ Scope {
     property string selectedModel: chatPreferences.selectedModel
     property string selectedModelName: "Codex"
     property string selectedEffort: chatPreferences.selectedEffort
-    property string activityMode: chatPreferences.activityMode === "compact"
-        ? "compact" : "detailed"
 
     onSelectedModelChanged: chatPreferences.selectedModel = selectedModel
     onSelectedEffortChanged: chatPreferences.selectedEffort = selectedEffort
-    onActivityModeChanged: chatPreferences.activityMode = activityMode
 
     property string latestActivityItemId: ""
+    property var currentResponseItemIds: []
+    property var currentResponseParts: ({})
     property var availableModels: []
     property var supportedEfforts: []
     readonly property var presets: {
@@ -256,16 +255,6 @@ Scope {
         return true;
     }
 
-    function chooseActivityMode(mode) {
-        const requested = String(mode || "").toLowerCase();
-        if (requested !== "detailed" && requested !== "compact") {
-            lastError = "Unknown activity mode. Use /activity detailed or /activity compact.";
-            return false;
-        }
-        activityMode = requested;
-        lastError = "";
-        return true;
-    }
 
     function applyPendingResumedSettings(catalogComplete) {
         if (pendingResumedSettings === null) {
@@ -344,7 +333,7 @@ Scope {
         const argument = pieces.slice(1).join(" ");
         const requiresArgument = command === "/model"
             || command === "/thinking" || command === "/effort"
-            || command === "/preset" || command === "/activity";
+            || command === "/preset";
         if (requiresArgument && argument.length === 0) {
             return false;
         }
@@ -380,9 +369,6 @@ Scope {
             break;
         case "/preset":
             choosePreset(argument);
-            break;
-        case "/activity":
-            chooseActivityMode(argument);
             break;
         case "/new":
             newChat();
@@ -548,74 +534,111 @@ Scope {
         lastError = "Only web and email links can be opened from AI answers.";
     }
 
-    function findActivity(itemId) {
-        const requested = String(itemId || "");
+    function findAssistantResponse(turnId) {
+        const requested = String(turnId || "");
         for (let index = messageModel.count - 1; index >= 0; index--) {
             const message = messageModel.get(index);
-            if (message.role === "activity" && message.itemId === requested) {
+            if (message.role === "assistant" && message.turnId === requested) {
                 return index;
             }
         }
         return -1;
     }
 
-    function removeTurnPlaceholder() {
-        const index = findActivity("turn:" + currentTurnId);
-        if (index >= 0) {
-            if (latestActivityItemId === "turn:" + currentTurnId) {
-                latestActivityItemId = "";
+    function resetCurrentResponse() {
+        currentResponseItemIds = [];
+        currentResponseParts = {};
+    }
+
+    function restoreCurrentResponse(turn) {
+        const ids = [];
+        const parts = {};
+        let activeActivityItemId = "";
+        const items = Array.isArray(turn && turn.items) ? turn.items : [];
+        for (const item of items) {
+            if (!item) {
+                continue;
             }
-            messageModel.remove(index);
+            if (item.type === "agentMessage") {
+                const itemId = String(item.id || "agent");
+                if (ids.indexOf(itemId) < 0) {
+                    ids.push(itemId);
+                }
+                parts[itemId] = String(item.text || "");
+                activeActivityItemId = "";
+            } else if (AiChatLogic.isActivityItem(item)
+                    && AiChatLogic.normalizedActivityStatus(
+                        item.status, "completed") === "streaming") {
+                activeActivityItemId = String(item.id || "");
+            }
         }
+        currentResponseItemIds = ids;
+        currentResponseParts = parts;
+        latestActivityItemId = activeActivityItemId;
     }
 
     function appendTurnPlaceholder() {
-        const index = appendMessage("activity", "", "streaming", currentThreadId,
-            currentTurnId, "turn:" + currentTurnId, []);
-        messageModel.setProperty(index, "activityType", "turn");
-        messageModel.setProperty(index, "activityTitle", "Thinking");
+        const index = appendMessage("assistant", "", "streaming", currentThreadId,
+            currentTurnId, "", []);
+        messageModel.setProperty(index, "activityTitle", "thinking…");
         latestActivityItemId = "turn:" + currentTurnId;
+        resetCurrentResponse();
     }
 
-    function appendActivity(item, fallbackStatus) {
+    function showActivity(item) {
         const itemId = String(item && item.id || "");
-        if (itemId.length === 0) {
-            return -1;
-        }
-        let index = findActivity(itemId);
-        const status = AiChatLogic.normalizedActivityStatus(
-            item.status, fallbackStatus);
+        let index = findAssistantResponse(currentTurnId);
         if (index < 0) {
-            index = appendMessage("activity", AiChatLogic.activityBody(item), status,
-                currentThreadId, currentTurnId, itemId, []);
-        } else {
-            const body = AiChatLogic.activityBody(item);
-            if (body.length > 0 || messageModel.get(index).body.length === 0) {
-                messageModel.setProperty(index, "body", body);
-            }
-            messageModel.setProperty(index, "messageStatus", status);
+            index = appendMessage("assistant", "", "streaming", currentThreadId,
+                currentTurnId, "", []);
         }
-        messageModel.setProperty(index, "activityType", String(item.type || "activity"));
-        messageModel.setProperty(index, "activityTitle",
-            AiChatLogic.activityTitle(item));
-        const output = AiChatLogic.activityOutput(item);
-        if (output.length > 0) {
-            messageModel.setProperty(index, "activityOutput", output);
-        }
-        return index;
+        messageModel.setProperty(
+            index, "activityTitle", AiChatLogic.loadingActivityText(item));
+        latestActivityItemId = itemId;
     }
 
-    function appendActivityText(itemId, delta, output) {
-        const index = findActivity(itemId);
-        if (index < 0) {
+    function finishActivity(itemId) {
+        if (String(itemId || "") !== latestActivityItemId) {
             return;
         }
-        const role = output ? "activityOutput" : "body";
-        const current = String(messageModel.get(index)[role] || "");
-        const next = current + String(delta || "");
-        const limit = 12000;
-        messageModel.setProperty(index, role, next.length > limit
-            ? "…\n" + next.slice(next.length - limit) : next);
+        const index = findAssistantResponse(currentTurnId);
+        if (index >= 0) {
+            messageModel.setProperty(index, "activityTitle", "");
+        }
+        latestActivityItemId = "";
+    }
+
+    function updateCurrentResponsePart(itemId, value, append) {
+        const responseItemId = String(itemId || "agent");
+        const ids = currentResponseItemIds.slice();
+        const parts = Object.assign({}, currentResponseParts);
+        if (ids.indexOf(responseItemId) < 0) {
+            ids.push(responseItemId);
+            parts[responseItemId] = "";
+        }
+        parts[responseItemId] = append
+            ? String(parts[responseItemId] || "") + String(value || "")
+            : String(value || "");
+        currentResponseItemIds = ids;
+        currentResponseParts = parts;
+
+        const responseParts = [];
+        for (const id of ids) {
+            const part = String(parts[id] || "");
+            if (part.length > 0) {
+                responseParts.push(part);
+            }
+        }
+
+        let index = findAssistantResponse(currentTurnId);
+        if (index < 0) {
+            index = appendMessage("assistant", "", "streaming", currentThreadId,
+                currentTurnId, responseItemId, []);
+        }
+        messageModel.setProperty(index, "body", responseParts.join("\n\n"));
+        messageModel.setProperty(index, "itemId", responseItemId);
+        messageModel.setProperty(index, "activityTitle", "");
+        latestActivityItemId = "";
     }
 
     function beginSandboxSetupStage(stage, timeoutMs) {
@@ -794,6 +817,7 @@ Scope {
         currentThreadId = "";
         currentTurnId = "";
         latestActivityItemId = "";
+        resetCurrentResponse();
         currentTitle = "New conversation";
         persistedThreadName = "";
         queuedSubmission = null;
@@ -1048,6 +1072,7 @@ Scope {
         currentThreadId = "";
         currentTurnId = "";
         latestActivityItemId = "";
+        resetCurrentResponse();
         currentTitle = "New conversation";
         persistedThreadName = "";
         queuedSubmission = null;
@@ -1153,6 +1178,7 @@ Scope {
 
         currentTurnId = "";
         latestActivityItemId = "";
+        resetCurrentResponse();
         isGenerating = false;
         for (const turn of pendingHydrationTurns) {
             const turnId = String(turn && turn.id || "");
@@ -1160,23 +1186,12 @@ Scope {
             if (status === "inProgress") {
                 currentTurnId = turnId;
                 isGenerating = true;
+                restoreCurrentResponse(turn);
             } else {
                 rememberTerminalTurnId(turnId);
             }
         }
-        if (isGenerating) {
-            transport.state = "streaming";
-            for (let index = messageModel.count - 1; index >= 0; index--) {
-                const message = messageModel.get(index);
-                if (message.turnId === currentTurnId
-                        && message.role === "activity") {
-                    latestActivityItemId = message.itemId;
-                    break;
-                }
-            }
-        } else {
-            transport.state = "ready";
-        }
+        transport.state = isGenerating ? "streaming" : "ready";
 
         pendingHydrationThread = null;
         pendingHydrationTurns = [];
@@ -1670,9 +1685,7 @@ Scope {
             turnId: turnId || "",
             itemId: itemId || "",
             attachments: attachmentEntries,
-            activityType: "",
             activityTitle: "",
-            activityOutput: "",
             errorText: "",
             createdAt: new Date().toISOString()
         });
@@ -1703,15 +1716,6 @@ Scope {
             || "Codex could not send this message."));
     }
 
-    function findAssistantMessage(itemId) {
-        for (let index = messageModel.count - 1; index >= 0; index--) {
-            const message = messageModel.get(index);
-            if (message.role === "assistant" && message.itemId === itemId) {
-                return index;
-            }
-        }
-        return -1;
-    }
 
     function handleResponse(requestId, succeeded, payload) {
         const pending = pendingRequests[requestId];
@@ -1899,6 +1903,7 @@ Scope {
                 .map(item => item.hostPath);
             conversationHostFiles = conversationHostFiles
                 .concat(submittedHostPaths);
+            resetCurrentResponse();
             const userMessageIndex = submissionMessageIndex(submission);
             if (userMessageIndex >= 0) {
                 messageModel.setProperty(
@@ -1967,61 +1972,30 @@ Scope {
         if (method === "item/started") {
             const item = params.item || {};
             if (AiChatLogic.isActivityItem(item)) {
-                removeTurnPlaceholder();
-                const index = appendActivity(item, "streaming");
-                if (index >= 0) {
-                    latestActivityItemId = String(item.id || "");
-                }
+                showActivity(item);
             }
             return;
         }
         if (method === "item/agentMessage/delta") {
-            const itemId = String(params.itemId || "");
-            let index = findAssistantMessage(itemId);
-            if (index < 0) {
-                removeTurnPlaceholder();
-                index = appendMessage("assistant", "", "streaming", currentThreadId,
-                    currentTurnId, itemId, []);
-            }
-            messageModel.setProperty(index, "body",
-                messageModel.get(index).body + String(params.delta || ""));
+            updateCurrentResponsePart(params.itemId, params.delta, true);
             return;
         }
-        if (method === "item/reasoning/summaryPartAdded") {
-            const index = findActivity(String(params.itemId || ""));
-            if (index >= 0 && messageModel.get(index).body.length > 0) {
-                appendActivityText(params.itemId, "\n\n", false);
-            }
-            return;
-        }
-        if (method === "item/reasoning/summaryTextDelta"
+        if (method === "item/reasoning/summaryPartAdded"
+                || method === "item/reasoning/summaryTextDelta"
                 || method === "item/reasoning/textDelta"
-                || method === "item/plan/delta") {
-            appendActivityText(params.itemId, params.delta, false);
-            return;
-        }
-        if (method === "item/commandExecution/outputDelta") {
-            appendActivityText(params.itemId, params.delta, true);
+                || method === "item/plan/delta"
+                || method === "item/commandExecution/outputDelta") {
             return;
         }
         if (method === "item/completed") {
             const item = params.item || {};
             if (item.type === "agentMessage") {
-                const itemId = String(item.id || params.itemId || "");
-                let index = findAssistantMessage(itemId);
-                if (index < 0) {
-                    removeTurnPlaceholder();
-                    index = appendMessage("assistant", "", "completed",
-                        currentThreadId, currentTurnId, itemId, []);
-                }
                 if (item.text !== undefined) {
-                    messageModel.setProperty(index, "body", String(item.text));
+                    updateCurrentResponsePart(
+                        item.id || params.itemId, item.text, false);
                 }
-                messageModel.setProperty(index, "messageStatus", "completed");
-                messageModel.setProperty(index, "itemId", itemId);
             } else if (AiChatLogic.isActivityItem(item)) {
-                removeTurnPlaceholder();
-                appendActivity(item, "completed");
+                finishActivity(item.id || params.itemId);
             }
             return;
         }
@@ -2062,8 +2036,11 @@ Scope {
                 }
                 messageModel.setProperty(index, "messageStatus",
                     status === "completed" ? "completed" : status);
-                if (entry.role === "assistant" && failureMessage.length > 0) {
-                    messageModel.setProperty(index, "errorText", failureMessage);
+                if (entry.role === "assistant") {
+                    messageModel.setProperty(index, "activityTitle", "");
+                    if (failureMessage.length > 0) {
+                        messageModel.setProperty(index, "errorText", failureMessage);
+                    }
                 }
             }
             notifyResponseReady(terminalTurnId, status);
@@ -2073,6 +2050,7 @@ Scope {
             }
             currentTurnId = "";
             latestActivityItemId = "";
+            resetCurrentResponse();
             refreshArtifacts();
         }
     }
@@ -2121,7 +2099,6 @@ Scope {
 
             property string selectedModel: ""
             property string selectedEffort: "default"
-            property string activityMode: "detailed"
         }
     }
 
@@ -2597,6 +2574,7 @@ Scope {
                     }
                     root.currentTurnId = "";
                     root.latestActivityItemId = "";
+                    root.resetCurrentResponse();
                 }
                 if (root.newChatPending) {
                     root.finishNewChat();
