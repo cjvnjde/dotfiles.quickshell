@@ -75,9 +75,9 @@ bind = SUPER, N, exec, qs -c main ipc call notes toggle
 
 The AI backend starts with the shell so the sandbox and Codex connection are
 ready before the overlay opens. The AI control in the top bar shows startup
-state, then requests the remaining weekly subscription allowance through that
-same sandbox connection. It shows `Ready` when the sandbox credential proxy
-does not expose subscription limits. Click the control to open the chat.
+state, then requests the remaining weekly subscription allowance through the
+same sandbox and its credential proxy. It shows `Ready` when the proxy does not
+expose subscription limits. Click the control to open the chat.
 
 Press `Super+A` to open a compact AI chat overlay, or `Super+Shift+A` to select
 a screen region and attach its untouched PNG to a new prompt. The interface is

@@ -40,8 +40,6 @@ Scope {
     readonly property string activePresetName: AiChatLogic.matchingPresetName(
         presets, selectedModel, selectedEffort)
     property var pendingRequests: ({})
-    property int rateLimitReadRequestId: -1
-    property bool rateLimitReadAttempted: false
     property var queuedSubmission: null
     property var currentTurnAttachments: []
     property var conversationHostFiles: []
@@ -194,37 +192,14 @@ Scope {
         return "Disconnected";
     }
 
-    function requestRateLimits() {
-        if (!transport.ready || rateLimitReadRequestId >= 0
-                || (rateLimitReadAttempted
-                    && weeklyLimitRemainingPercent < 0)) {
+    function refreshRateLimits() {
+        if (resolvedSandboxName.length === 0 || rateLimitReader.running) {
             return;
         }
 
-        weeklyLimitLoading = true;
+        weeklyLimitLoading = weeklyLimitRemainingPercent < 0;
         weeklyLimitError = "";
-        rateLimitReadAttempted = true;
-        rateLimitReadRequestId = call(
-            "account/rateLimits/read", {}, "rateLimits", {});
-        if (rateLimitReadRequestId < 0) {
-            weeklyLimitRemainingPercent = -1;
-            weeklyLimitLoading = false;
-            weeklyLimitError = "Could not request Codex limits.";
-        }
-    }
-
-    function applyRateLimitResponse(payload) {
-        rateLimitReadRequestId = -1;
-        weeklyLimitLoading = false;
-        const remaining = AiChatLogic.weeklyLimitRemainingPercent(payload);
-        if (remaining < 0) {
-            weeklyLimitRemainingPercent = -1;
-            weeklyLimitError = "Codex did not provide a weekly limit.";
-            return;
-        }
-
-        weeklyLimitRemainingPercent = remaining;
-        weeklyLimitError = "";
+        rateLimitReader.running = true;
     }
 
     function chooseModel(modelId) {
@@ -1751,14 +1726,6 @@ Scope {
         }
 
         if (!succeeded) {
-            if (pending.kind === "rateLimits") {
-                rateLimitReadRequestId = -1;
-                weeklyLimitRemainingPercent = -1;
-                weeklyLimitLoading = false;
-                weeklyLimitError = String(payload && payload.message
-                    || "Could not read Codex limits.");
-                return;
-            }
             if (pending.kind === "modelList") {
                 modelCatalogLoading = false;
                 diagnosticText = "Codex did not provide a model catalog.";
@@ -1865,8 +1832,6 @@ Scope {
                     publishPendingMaintenanceNotice();
                 }
             }
-        } else if (pending.kind === "rateLimits") {
-            applyRateLimitResponse(payload);
         } else if (pending.kind === "modelList") {
             modelCatalogLoading = false;
             updateModels(payload);
@@ -1988,12 +1953,6 @@ Scope {
     }
 
     function handleNotification(method, params) {
-        if (method === "account/rateLimits/updated") {
-            rateLimitReadAttempted = false;
-            requestRateLimits();
-            return;
-        }
-
         const notificationThreadId = String(params.threadId || "");
         if (notificationThreadId.length > 0
                 && notificationThreadId !== currentThreadId) {
@@ -2539,10 +2498,36 @@ Scope {
     Timer {
         interval: 5 * 60 * 1000
         repeat: true
-        running: transport.ready && root.weeklyLimitRemainingPercent >= 0
-        onTriggered: root.requestRateLimits()
+        running: transport.ready
+        onTriggered: root.refreshRateLimits()
     }
 
+    Process {
+        id: rateLimitReader
+
+        command: [
+            "bash", Quickshell.shellPath("ai-chat/AiReadUsage.sh"),
+            root.resolvedSandboxName
+        ]
+        stdout: StdioCollector { id: rateLimitOutput }
+        stderr: StdioCollector {}
+        onExited: function(exitCode) {
+            root.weeklyLimitLoading = false;
+            const output = rateLimitOutput.text.trim();
+            const remaining = Number(output);
+            if (exitCode !== 0 || output.length === 0
+                    || !Number.isFinite(remaining)
+                    || remaining < 0 || remaining > 100) {
+                root.weeklyLimitRemainingPercent = -1;
+                root.weeklyLimitError =
+                    "Weekly limits are unavailable in the sandbox.";
+                return;
+            }
+
+            root.weeklyLimitRemainingPercent = Math.round(remaining);
+            root.weeklyLimitError = "";
+        }
+    }
 
     CodexAppServer {
         id: transport
@@ -2559,8 +2544,6 @@ Scope {
         }
         onStateChanged: {
             if (state === "initializing") {
-                root.rateLimitReadAttempted = false;
-                root.rateLimitReadRequestId = -1;
                 root.weeklyLimitRemainingPercent = -1;
                 root.weeklyLimitLoading = true;
                 root.weeklyLimitError = "";
@@ -2576,10 +2559,9 @@ Scope {
                     capabilities: { experimentalApi: true }
                 }, "initialize", {});
             } else if (state === "ready") {
-                root.requestRateLimits();
+                root.refreshRateLimits();
             } else if (state === "error") {
                 root.codexAuthorized = false;
-                root.rateLimitReadRequestId = -1;
                 root.weeklyLimitRemainingPercent = -1;
                 root.weeklyLimitLoading = false;
                 root.weeklyLimitError = "Sandbox Codex backend disconnected.";

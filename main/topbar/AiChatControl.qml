@@ -41,6 +41,7 @@ Rectangle {
         spacing: 4
 
         Text {
+            anchors.verticalCenter: parent.verticalCenter
             text: "󰚩"
             color: root.statusColor
             font.family: Theme.fontFamily
@@ -48,6 +49,7 @@ Rectangle {
         }
 
         Text {
+            anchors.verticalCenter: parent.verticalCenter
             text: root.statusLabel
             color: Theme.text
             font.family: Theme.fontFamily
