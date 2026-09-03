@@ -94,10 +94,11 @@ Accepted outgoing messages appear in the conversation immediately with a
 Type `/` at the start of the composer or after existing draft text to open the
 command palette. Selecting an inline command removes only that command fragment
 and preserves the rest of the draft. `/file` hides the chat and opens a
-foreground picker for PNG, JPEG, WebP, and text files. `/ps` captures a screen
-region, `/copy` copies the user and assistant transcript, and `/export` opens a
-native save dialog for an atomic Markdown export. `/history` opens persisted
-Codex threads. `/pin` appears in popup mode and moves the chat into a managed
+foreground picker for PNG, JPEG, WebP, and text files. `/screenshot` captures
+a screen region, `/copy` copies the user and assistant transcript, and
+`/export` opens a native save dialog for an atomic Markdown export. `/history`
+opens persisted Codex threads. `/pin` appears in popup mode and moves the chat
+into a managed
 window; `/unpin` appears there instead and returns it to the popup. `/model`
 changes the active model, `/thinking` changes reasoning effort, and
 `/preset NAME` applies a configured model-and-thinking pair.

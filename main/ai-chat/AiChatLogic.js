@@ -6,9 +6,9 @@ const COMMAND_CATALOG = [
         immediate: true
     },
     {
-        label: "/ps",
+        label: "/screenshot",
         detail: "Capture a screen region",
-        draft: "/ps",
+        draft: "/screenshot",
         immediate: true
     },
     {

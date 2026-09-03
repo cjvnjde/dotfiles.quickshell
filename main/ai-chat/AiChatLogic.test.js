@@ -29,6 +29,15 @@ test("preset commands resolve configured names", () => {
     );
 });
 
+test("screenshot command uses a descriptive name", () => {
+    const labels = logic.commandItems(
+        "/", [], "", [], "", "detailed", [], false
+    ).map(item => item.label);
+
+    assert.ok(labels.includes("/screenshot"));
+    assert.ok(!labels.includes("/ps"));
+});
+
 test("window mode commands expose only the available transition", () => {
     function modeCommands(pinned) {
         return logic.commandItems(

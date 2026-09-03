@@ -334,7 +334,6 @@ Scope {
         case "/file":
             pickFile();
             break;
-        case "/ps":
         case "/screenshot":
             captureRegion();
             break;
