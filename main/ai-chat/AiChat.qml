@@ -40,8 +40,8 @@ Scope {
     readonly property string activePresetName: AiChatLogic.matchingPresetName(
         presets, selectedModel, selectedEffort)
     property var pendingRequests: ({})
-    property int rateLimitInitializeRequestId: -1
     property int rateLimitReadRequestId: -1
+    property bool rateLimitReadAttempted: false
     property var queuedSubmission: null
     property var currentTurnAttachments: []
     property var conversationHostFiles: []
@@ -139,7 +139,6 @@ Scope {
     Component.onCompleted: {
         if (AiConfig.backendAutoStart) {
             startBackend();
-            rateLimitTransport.start();
         }
     }
 
@@ -196,14 +195,17 @@ Scope {
     }
 
     function requestRateLimits() {
-        if (!rateLimitTransport.ready || rateLimitReadRequestId >= 0) {
+        if (!transport.ready || rateLimitReadRequestId >= 0
+                || (rateLimitReadAttempted
+                    && weeklyLimitRemainingPercent < 0)) {
             return;
         }
 
         weeklyLimitLoading = true;
         weeklyLimitError = "";
-        rateLimitReadRequestId = rateLimitTransport.request(
-            "account/rateLimits/read", {});
+        rateLimitReadAttempted = true;
+        rateLimitReadRequestId = call(
+            "account/rateLimits/read", {}, "rateLimits", {});
         if (rateLimitReadRequestId < 0) {
             weeklyLimitRemainingPercent = -1;
             weeklyLimitLoading = false;
@@ -211,41 +213,16 @@ Scope {
         }
     }
 
-    function handleRateLimitResponse(requestId, succeeded, payload) {
-        if (requestId === rateLimitInitializeRequestId) {
-            rateLimitInitializeRequestId = -1;
-            if (!succeeded) {
-                weeklyLimitRemainingPercent = -1;
-                weeklyLimitLoading = false;
-                weeklyLimitError = "Could not initialize Codex usage tracking.";
-                rateLimitTransport.state = "error";
-                return;
-            }
-
-            rateLimitTransport.notify("initialized", {});
-            rateLimitTransport.state = "ready";
-            requestRateLimits();
-            return;
-        }
-        if (requestId !== rateLimitReadRequestId) {
-            return;
-        }
-
+    function applyRateLimitResponse(payload) {
         rateLimitReadRequestId = -1;
         weeklyLimitLoading = false;
-        if (!succeeded) {
-            weeklyLimitRemainingPercent = -1;
-            weeklyLimitError = String(payload && payload.message
-                || "Could not read Codex limits.");
-            return;
-        }
-
         const remaining = AiChatLogic.weeklyLimitRemainingPercent(payload);
         if (remaining < 0) {
             weeklyLimitRemainingPercent = -1;
             weeklyLimitError = "Codex did not provide a weekly limit.";
             return;
         }
+
         weeklyLimitRemainingPercent = remaining;
         weeklyLimitError = "";
     }
@@ -1774,6 +1751,14 @@ Scope {
         }
 
         if (!succeeded) {
+            if (pending.kind === "rateLimits") {
+                rateLimitReadRequestId = -1;
+                weeklyLimitRemainingPercent = -1;
+                weeklyLimitLoading = false;
+                weeklyLimitError = String(payload && payload.message
+                    || "Could not read Codex limits.");
+                return;
+            }
             if (pending.kind === "modelList") {
                 modelCatalogLoading = false;
                 diagnosticText = "Codex did not provide a model catalog.";
@@ -1880,6 +1865,8 @@ Scope {
                     publishPendingMaintenanceNotice();
                 }
             }
+        } else if (pending.kind === "rateLimits") {
+            applyRateLimitResponse(payload);
         } else if (pending.kind === "modelList") {
             modelCatalogLoading = false;
             updateModels(payload);
@@ -2001,6 +1988,12 @@ Scope {
     }
 
     function handleNotification(method, params) {
+        if (method === "account/rateLimits/updated") {
+            rateLimitReadAttempted = false;
+            requestRateLimits();
+            return;
+        }
+
         const notificationThreadId = String(params.threadId || "");
         if (notificationThreadId.length > 0
                 && notificationThreadId !== currentThreadId) {
@@ -2546,45 +2539,10 @@ Scope {
     Timer {
         interval: 5 * 60 * 1000
         repeat: true
-        running: rateLimitTransport.ready
+        running: transport.ready && root.weeklyLimitRemainingPercent >= 0
         onTriggered: root.requestRateLimits()
     }
 
-    CodexAppServer {
-        id: rateLimitTransport
-        launchCommand: [
-            "codex", "-c", "check_for_update_on_startup=false", "app-server"
-        ]
-
-        onResponse: (requestId, succeeded, payload) =>
-            root.handleRateLimitResponse(requestId, succeeded, payload)
-        onNotification: (method, params) => {
-            if (method === "account/rateLimits/updated") {
-                root.requestRateLimits();
-            }
-        }
-        onServerRequest: (requestId, method, params) =>
-            replyError(requestId, -32601, "Unsupported by usage tracking")
-        onStateChanged: {
-            if (state === "initializing") {
-                root.rateLimitInitializeRequestId = request("initialize", {
-                    clientInfo: {
-                        name: "quickshell_ai_usage",
-                        title: "Quickshell AI Usage",
-                        version: "1.0.0"
-                    },
-                    capabilities: { experimentalApi: true }
-                });
-            } else if (state === "error") {
-                root.rateLimitInitializeRequestId = -1;
-                root.rateLimitReadRequestId = -1;
-                root.weeklyLimitRemainingPercent = -1;
-                root.weeklyLimitLoading = false;
-                root.weeklyLimitError = lastError.length > 0
-                    ? lastError : "Codex usage tracking disconnected.";
-            }
-        }
-    }
 
     CodexAppServer {
         id: transport
@@ -2601,6 +2559,11 @@ Scope {
         }
         onStateChanged: {
             if (state === "initializing") {
+                root.rateLimitReadAttempted = false;
+                root.rateLimitReadRequestId = -1;
+                root.weeklyLimitRemainingPercent = -1;
+                root.weeklyLimitLoading = true;
+                root.weeklyLimitError = "";
                 root.modelCatalogLoading = false;
                 const updated = {};
                 root.pendingRequests = updated;
@@ -2612,8 +2575,14 @@ Scope {
                     },
                     capabilities: { experimentalApi: true }
                 }, "initialize", {});
+            } else if (state === "ready") {
+                root.requestRateLimits();
             } else if (state === "error") {
                 root.codexAuthorized = false;
+                root.rateLimitReadRequestId = -1;
+                root.weeklyLimitRemainingPercent = -1;
+                root.weeklyLimitLoading = false;
+                root.weeklyLimitError = "Sandbox Codex backend disconnected.";
                 root.modelCatalogLoading = false;
                 root.pendingResumedSettings = null;
                 overloadRetry.stop();
