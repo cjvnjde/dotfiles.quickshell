@@ -10,13 +10,6 @@ PanelWindow {
     required property var notesController
     required property var aiController
 
-    readonly property var hyprlandMonitor: Hyprland.monitorFor(screen)
-
-    function refreshHyprlandState() {
-        Hyprland.refreshMonitors();
-        Hyprland.refreshWorkspaces();
-    }
-
     anchors {
         top: true
         left: true
@@ -26,14 +19,40 @@ PanelWindow {
     implicitHeight: Theme.barHeight
     color: "#40313244"
 
-    Component.onCompleted: Qt.callLater(root.refreshHyprlandState)
+    readonly property var persistentWorkspaceIds: [1, 2, 3, 4, 5]
+    readonly property var hyprlandMonitor: {
+        Hyprland.monitors.values;
+        return Hyprland.monitorFor(screen);
+    }
 
-    Connections {
-        target: Hyprland
-
-        function onConnected() {
-            root.refreshHyprlandState();
+    function workspaceById(workspaceId) {
+        const workspaces = Hyprland.workspaces.values;
+        for (let index = 0; index < workspaces.length; index++) {
+            if (workspaces[index].id === workspaceId) {
+                return workspaces[index];
+            }
         }
+        return null;
+    }
+
+    function workspaceIdsForMonitor() {
+        const workspaceIds = persistentWorkspaceIds.slice();
+        const workspaces = Hyprland.workspaces.values;
+        for (let index = 0; index < workspaces.length; index++) {
+            const workspace = workspaces[index];
+            if (workspace.id > 0
+                    && workspaceIds.indexOf(workspace.id) === -1
+                    && workspace.monitor === hyprlandMonitor) {
+                workspaceIds.push(workspace.id);
+            }
+        }
+        workspaceIds.sort((left, right) => left - right);
+        return workspaceIds;
+    }
+
+    Component.onCompleted: {
+        Hyprland.refreshMonitors();
+        Hyprland.refreshWorkspaces();
     }
 
     Rectangle {
@@ -56,30 +75,31 @@ PanelWindow {
 
             Repeater {
                 model: ScriptModel {
-                    values: Hyprland.workspaces.values.filter(workspace =>
-                        workspace.id > 0
-                        && workspace.monitor === root.hyprlandMonitor
-                    )
+                    values: root.workspaceIdsForMonitor()
                 }
 
                 Rectangle {
-                    required property var modelData
+                    required property int modelData
 
+                    readonly property int workspaceId: modelData
+                    readonly property var workspace: root.workspaceById(workspaceId)
                     readonly property bool active: root.hyprlandMonitor !== null
                         && root.hyprlandMonitor.activeWorkspace !== null
-                        && root.hyprlandMonitor.activeWorkspace.id === modelData.id
+                        && root.hyprlandMonitor.activeWorkspace.id === workspaceId
+                    readonly property bool urgent: workspace !== null
+                        && workspace.urgent
 
                     width: 22
                     height: workspaceRow.parent.height
                     radius: height / 2
-                    color: modelData.urgent
+                    color: urgent
                         ? Theme.red
                         : workspaceMouse.containsMouse ? Theme.surface1 : "transparent"
 
                     Text {
                         anchors.centerIn: parent
-                        text: modelData.name
-                        color: modelData.urgent
+                        text: String(parent.workspaceId)
+                        color: parent.urgent
                             ? Theme.base
                             : parent.active ? Theme.sky : Theme.lavender
                         font.family: Theme.fontFamily
@@ -90,7 +110,13 @@ PanelWindow {
                         id: workspaceMouse
                         anchors.fill: parent
                         hoverEnabled: true
-                        onClicked: modelData.activate()
+                        onClicked: {
+                            if (parent.workspace !== null) {
+                                parent.workspace.activate();
+                            } else {
+                                Hyprland.dispatch("workspace " + parent.workspaceId);
+                            }
+                        }
                     }
                 }
             }
