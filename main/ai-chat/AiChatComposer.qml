@@ -351,6 +351,31 @@ Item {
                         font.family: Theme.fontFamily
                         font.pixelSize: 11
                     }
+                    Rectangle {
+                        Layout.preferredWidth: reconnectText.implicitWidth + 18
+                        Layout.preferredHeight: 26
+                        visible: controller.canReconnect
+                        radius: 8
+                        color: reconnectMouse.containsMouse
+                            ? "#3a3a3a" : "#2c2c2c"
+
+                        Text {
+                            id: reconnectText
+                            anchors.centerIn: parent
+                            text: "Reconnect"
+                            color: "#d8d8d8"
+                            font.family: Theme.fontFamily
+                            font.pixelSize: 11
+                            font.weight: Font.DemiBold
+                        }
+
+                        MouseArea {
+                            id: reconnectMouse
+                            anchors.fill: parent
+                            hoverEnabled: true
+                            onClicked: controller.reconnect()
+                        }
+                    }
 
                     Item { Layout.fillWidth: true }
 

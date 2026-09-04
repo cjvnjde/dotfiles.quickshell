@@ -1,6 +1,7 @@
 import QtQuick
 import Quickshell
 import Quickshell.Bluetooth
+import Quickshell.Io
 import ".."
 
 Rectangle {
@@ -22,6 +23,10 @@ Rectangle {
     property bool managesDiscovery: false
     property var pairingDevice: null
     property string forgetCandidate: ""
+    property string pendingAddress: ""
+    property string pendingAction: ""
+    property string actionErrorAddress: ""
+    property string actionError: ""
 
     function deviceName(device) {
         return device.name || device.deviceName || device.address || "Unknown device";
@@ -50,10 +55,48 @@ Rectangle {
         return "Available";
     }
 
-    function stateChanging(device) {
-        return device.pairing
-            || device.state === BluetoothDeviceState.Connecting
-            || device.state === BluetoothDeviceState.Disconnecting;
+    function deviceActionPending(device) {
+        return pendingAction.length > 0 && pendingAddress === device.address;
+    }
+
+    function startDeviceAction(device, action) {
+        if (!device || !device.address || bluetoothAction.running || pendingAction.length > 0) {
+            return;
+        }
+
+        forgetCandidate = "";
+        actionErrorAddress = "";
+        actionError = "";
+        pendingAddress = device.address;
+        pendingAction = action;
+        bluetoothAction.command = [
+            "bash",
+            Quickshell.shellPath("topbar/BluetoothDevice.sh"),
+            action,
+            device.address
+        ];
+        bluetoothAction.running = true;
+    }
+
+    function finishDeviceAction(exitCode) {
+        const address = pendingAddress;
+        const action = pendingAction;
+        const output = (bluetoothActionError.text || bluetoothActionOutput.text).trim();
+
+        pendingAddress = "";
+        pendingAction = "";
+        if (exitCode === 0) {
+            return;
+        }
+
+        const label = action === "connect" ? "Connection" : "Disconnect";
+        actionErrorAddress = address;
+        actionError = exitCode === 124 || exitCode === 137
+            ? label + " timed out" : label + " failed";
+        console.warn(
+            "Bluetooth " + action + " failed for " + address + ":",
+            output || "helper exited with status " + exitCode
+        );
     }
 
     function deviceStatus(device) {
@@ -62,6 +105,12 @@ Rectangle {
         }
         if (device.pairing) {
             return "Pairing…";
+        }
+        if (deviceActionPending(device)) {
+            return pendingAction === "connect" ? "Connecting…" : "Disconnecting…";
+        }
+        if (actionErrorAddress === device.address && actionError.length > 0) {
+            return actionError;
         }
         if (device.state === BluetoothDeviceState.Connecting) {
             return "Connecting…";
@@ -82,6 +131,13 @@ Rectangle {
     }
 
     function actionLabel(device) {
+        if (pendingAction.length > 0) {
+            if (deviceActionPending(device)) {
+                return pendingAction === "connect" ? "Connecting" : "Stopping";
+            }
+
+            return "Wait…";
+        }
         if (pairingDevice && pairingDevice !== device) {
             return "Wait…";
         }
@@ -108,7 +164,8 @@ Rectangle {
     }
 
     function canActivate(device) {
-        return (!pairingDevice || pairingDevice === device)
+        return pendingAction.length === 0
+            && (!pairingDevice || pairingDevice === device)
             && device.state !== BluetoothDeviceState.Connecting
             && device.state !== BluetoothDeviceState.Disconnecting;
     }
@@ -119,6 +176,8 @@ Rectangle {
             return;
         }
         if (device.blocked) {
+            actionErrorAddress = "";
+            actionError = "";
             device.blocked = false;
             return;
         }
@@ -130,19 +189,26 @@ Rectangle {
             return;
         }
         if (device.connected) {
-            device.disconnect();
+            startDeviceAction(device, "disconnect");
             return;
         }
         if (device.paired || device.bonded) {
-            device.connect();
+            startDeviceAction(device, "connect");
             return;
         }
 
+        actionErrorAddress = "";
+        actionError = "";
         pairingDevice = device;
         device.pair();
     }
 
     function requestForget(device) {
+        if (!canActivate(device)) {
+            return;
+        }
+        actionErrorAddress = "";
+        actionError = "";
         if (forgetCandidate !== device.address) {
             forgetCandidate = device.address;
             return;
@@ -157,11 +223,12 @@ Rectangle {
 
     function finishPairing() {
         const device = pairingDevice;
-        if (device && device.paired) {
-            device.trusted = true;
-            device.connect();
-        }
+        const shouldConnect = device && (device.paired || device.bonded);
+
         pairingDevice = null;
+        if (shouldConnect) {
+            startDeviceAction(device, "connect");
+        }
     }
 
     function startDiscovery() {
@@ -198,19 +265,44 @@ Rectangle {
     radius: height / 2
     color: bluetoothMouse.containsMouse ? Theme.surface1 : Theme.surface0
 
+    Process {
+        id: bluetoothAction
+
+        stdout: StdioCollector {
+            id: bluetoothActionOutput
+        }
+        stderr: StdioCollector {
+            id: bluetoothActionError
+        }
+        onExited: function(exitCode) {
+            root.finishDeviceAction(exitCode);
+        }
+    }
+
     Timer {
         id: pairingSettleTimer
         interval: 250
         onTriggered: root.finishPairing()
+    }
+    Timer {
+        interval: 1000
+        repeat: true
+        running: bluetoothPopup.visible
+            && root.managesDiscovery
+            && root.adapter !== null
+            && root.enabled
+            && !root.adapter.discovering
+        onTriggered: root.startDiscovery()
     }
 
     Connections {
         target: root.pairingDevice
 
         function onPairedChanged() {
-            if (root.pairingDevice && root.pairingDevice.paired) {
-                pairingSettleTimer.stop();
-                root.finishPairing();
+            if (root.pairingDevice
+                    && root.pairingDevice.paired
+                    && !root.pairingDevice.pairing) {
+                pairingSettleTimer.restart();
             }
         }
 
@@ -496,7 +588,9 @@ Rectangle {
                                 bottomMargin: 9
                             }
                             text: root.deviceStatus(modelData)
-                            color: modelData.blocked ? Theme.red
+                            color: root.actionErrorAddress === modelData.address
+                                ? Theme.red
+                                : modelData.blocked ? Theme.red
                                 : modelData.connected ? Theme.green : Theme.subtext0
                             elide: Text.ElideRight
                             font.family: Theme.fontFamily
@@ -542,8 +636,11 @@ Rectangle {
                                 id: trustMouse
                                 anchors.fill: parent
                                 hoverEnabled: true
+                                enabled: root.canActivate(modelData)
                                 onClicked: {
                                     root.forgetCandidate = "";
+                                    root.actionErrorAddress = "";
+                                    root.actionError = "";
                                     modelData.trusted = !modelData.trusted;
                                 }
                             }
@@ -575,6 +672,7 @@ Rectangle {
                                 id: forgetMouse
                                 anchors.fill: parent
                                 hoverEnabled: true
+                                enabled: root.canActivate(modelData)
                                 onClicked: root.requestForget(modelData)
                             }
                         }

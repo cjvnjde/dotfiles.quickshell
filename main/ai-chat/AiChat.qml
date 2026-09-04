@@ -47,9 +47,10 @@ Scope {
     property bool discoveringSandbox: false
     property string sandboxSetupStage: ""
     property bool sandboxSetupTimedOut: false
+    property int sandboxDiscoveryFailures: 0
     readonly property bool sandboxSetupRunning: sandboxDiscovery.running
-        || resetSandboxWorkspace.running || prepareSandboxWorkspace.running
-        || createChatSandbox.running
+        || sandboxDiscoveryRetry.running || resetSandboxWorkspace.running
+        || prepareSandboxWorkspace.running || createChatSandbox.running
     property bool captureRequested: false
     property int conversationGeneration: 0
     property string currentTitle: "New conversation"
@@ -118,6 +119,8 @@ Scope {
         || historyBusy || exportBusy || artifactSaveBusy || artifactDeleteBusy
         || prepareThreadOutputs.running || outputIndex.running
         || cleanupThreadOutputs.running
+    readonly property bool canReconnect: connectionState === "error"
+        && !incompatibleActionRunning
     readonly property bool canOpenHistory: transport.ready
         && attachmentModel.count === 0 && !incompatibleActionRunning
     readonly property bool canExport: messageModel.count > 0
@@ -151,6 +154,9 @@ Scope {
         }
         if (sandboxSetupStage === "checking") {
             return "Checking Codex sandbox…";
+        }
+        if (sandboxSetupStage === "retrying") {
+            return "Waiting to retry Codex sandbox…";
         }
         if (sandboxSetupStage === "preparing") {
             return "Preparing Codex sandbox…";
@@ -649,6 +655,7 @@ Scope {
 
     function finishSandboxSetup() {
         sandboxSetupTimeout.stop();
+        sandboxDiscoveryRetry.stop();
         sandboxSetupStage = "";
         sandboxSetupTimedOut = false;
         discoveringSandbox = false;
@@ -656,6 +663,7 @@ Scope {
 
     function failSandboxSetup(message) {
         sandboxSetupTimeout.stop();
+        sandboxDiscoveryRetry.stop();
         sandboxSetupStage = "";
         discoveringSandbox = false;
         captureRequested = false;
@@ -693,6 +701,15 @@ Scope {
         return "Preparing the sandbox workspace timed out. Check filesystem "
             + "access, then use /reconnect.";
     }
+    function sandboxDiscoveryFailureMessage() {
+        const detail = sandboxListError.text.trim()
+            .replace(/\s+/g, " ").slice(0, 180);
+        const reason = detail.length > 0
+            ? "sbx ls failed: " + detail
+            : "Could not list sbx sandboxes.";
+        return reason + " Use Reconnect to retry.";
+    }
+
 
     function open() {
         shown = true;
@@ -727,6 +744,7 @@ Scope {
         }
 
         sandboxSetupTimedOut = false;
+        sandboxDiscoveryFailures = 0;
         discoveringSandbox = true;
         lastError = "";
         beginSandboxSetupStage("checking", AiConfig.sandboxCheckTimeoutMs);
@@ -2362,21 +2380,39 @@ Scope {
             root.failSandboxSetup(root.sandboxSetupTimeoutMessage(stage));
         }
     }
+    Timer {
+        id: sandboxDiscoveryRetry
+
+        interval: AiConfig.sandboxCheckRetryDelayMs
+        repeat: false
+        onTriggered: {
+            root.beginSandboxSetupStage(
+                "checking", AiConfig.sandboxCheckTimeoutMs);
+            sandboxDiscovery.running = true;
+        }
+    }
+
 
     Process {
         id: sandboxDiscovery
 
         command: AiConfig.sbxCommand.concat(["ls", "-q"])
         stdout: StdioCollector { id: sandboxListOutput }
-        stderr: StdioCollector {}
+        stderr: StdioCollector { id: sandboxListError }
         onExited: function(exitCode) {
             sandboxSetupTimeout.stop();
             if (root.sandboxSetupTimedOut) {
                 return;
             }
             if (exitCode !== 0) {
-                root.failSandboxSetup(
-                    "Could not list sbx sandboxes. Run sbx ls in a terminal.");
+                root.sandboxDiscoveryFailures++;
+                if (root.sandboxDiscoveryFailures
+                        <= AiConfig.sandboxCheckRetryLimit) {
+                    root.sandboxSetupStage = "retrying";
+                    sandboxDiscoveryRetry.restart();
+                    return;
+                }
+                root.failSandboxSetup(root.sandboxDiscoveryFailureMessage());
                 return;
             }
             const sandboxes = sandboxListOutput.text.split(/\r?\n/)

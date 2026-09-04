@@ -18,6 +18,8 @@ QtObject {
     readonly property string sandboxOutputHostDirectory: sandboxWorkspace + "/outputs"
     readonly property int sandboxOutputMaxBytes: 100 * 1024 * 1024
     readonly property int sandboxCheckTimeoutMs: 20000
+    readonly property int sandboxCheckRetryLimit: 3
+    readonly property int sandboxCheckRetryDelayMs: 3000
     readonly property int sandboxWorkspaceTimeoutMs: 15000
     readonly property int sandboxCreateTimeoutMs: 300000
     readonly property bool backendAutoStart: true

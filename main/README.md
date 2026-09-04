@@ -177,9 +177,10 @@ sbx exec quickshell-ai-chat sh -lc 'codex app-server --help'
 ```
 
 Sandbox checks stop after 20 seconds, workspace preparation after 15 seconds,
-and first-time sandbox creation after five minutes. A timeout stops the stuck
-`sbx` process and shows a recovery command; resolve sign-in, daemon, network,
-or filesystem problems in a terminal, then run `/reconnect`.
+and first-time sandbox creation after five minutes. A failed startup check is
+retried three times. A timeout stops the stuck `sbx` process and shows a
+recovery command. Resolve sign-in, daemon, network, or filesystem problems in a
+terminal, then select **Reconnect** in the error footer or run `/reconnect`.
 
 ### Chat-only instructions and skills
 
@@ -293,13 +294,15 @@ Quickshell load arbitrary host files or remote image URLs. Only `http`,
   output and input together, or scroll over it to change output volume in 5%
   steps. Right-click any slider to mute only that channel.
 - Bluetooth: click to open the device popup. It scans while open, keeps
-  connected and paired devices first, and supports pairing, connection,
-  trust, and confirmed forgetting; right-click the widget to toggle power.
+  connected and paired devices first, and supports pairing, bounded
+  connection and disconnection attempts, trust, visible action failures, and
+  confirmed forgetting; right-click the widget to toggle power.
 - Network: click to manage Wi-Fi scanning and connections, including joining a
   secured network; right-click to toggle Wi-Fi power directly. Wired status is
   shown automatically when Ethernet is connected.
-- Language: shows the active keyboard layout as a two-letter language code and
-  updates immediately when the layout changes.
+- Language: click the current two-letter language code to list and select any
+  keyboard layout configured in Hyprland. The indicator updates immediately
+  when the layout changes.
 - AI: shows sandbox and Codex connection progress, then the remaining weekly
   subscription allowance when the sandbox exposes it. Click it to open chat.
 - Notes: click the note icon to open the anchored, editable card grid. Its
@@ -308,5 +311,5 @@ Quickshell load arbitrary host files or remote image URLs. Only `http`,
   between months or click the month title to return to today.
 
 The controls use Quickshell's native MPRIS, PipeWire, and BlueZ integrations.
-The language indicator queries Hyprland once at startup and then follows its
-keyboard layout events.
+The language picker reads Hyprland's configured keyboard layouts at startup,
+when opened, and after layout-change events.
