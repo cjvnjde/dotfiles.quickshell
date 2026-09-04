@@ -289,10 +289,11 @@ Quickshell load arbitrary host files or remote image URLs. Only `http`,
   metadata, and previous, play/pause, and next controls.
 - Privacy: colored dots appear while the microphone, camera, or screen sharing
   is active (red, orange, and purple respectively).
-- Sound: click to open output and input volume controls, device pickers, and
-  per-application playback sliders. Right-click the widget to mute or unmute
-  output and input together, or scroll over it to change output volume in 5%
-  steps. Right-click any slider to mute only that channel.
+- Sound: click to open output and input volume controls, device pickers,
+  per-application playback sliders, and an input-monitor switch that directly
+  connects the selected input to the selected output. Right-click the widget to
+  mute or unmute output and input together, or scroll over it to change output
+  volume in 5% steps. Right-click any slider to mute only that channel.
 - Bluetooth: click to open the device popup. It scans while open, keeps
   connected and paired devices first, and supports pairing, bounded
   connection and disconnection attempts, trust, visible action failures, and

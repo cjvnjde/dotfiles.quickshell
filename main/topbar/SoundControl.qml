@@ -1,5 +1,6 @@
 import QtQuick
 import Quickshell
+import Quickshell.Io
 import Quickshell.Services.Mpris
 import Quickshell.Services.Pipewire
 import "AudioModel.js" as AudioModel
@@ -12,6 +13,7 @@ Rectangle {
     readonly property var source: Pipewire.defaultAudioSource
     readonly property var nodes: Pipewire.nodes ? Pipewire.nodes.values : []
     readonly property var mprisPlayers: Mpris.players ? Mpris.players.values : []
+    readonly property var linkGroups: Pipewire.linkGroups ? Pipewire.linkGroups.values : []
 
     readonly property var candidateSinks: {
         const values = [];
@@ -52,6 +54,7 @@ Rectangle {
     property var displaySources: []
     property var displayStreams: []
     property real wheelAccumulator: 0
+    property string routeError: ""
 
     readonly property bool outputAvailable: sink !== null && sink.audio !== null
     readonly property real outputVolume: outputAvailable ? sink.audio.volume : 0
@@ -61,6 +64,23 @@ Rectangle {
     readonly property bool inputMuted: inputAvailable && source.audio.muted
     readonly property bool anyAudible: (outputAvailable && !outputMuted)
         || (inputAvailable && !inputMuted)
+    readonly property bool routeAvailable: inputAvailable && outputAvailable
+    readonly property bool routeConnected: {
+        if (!routeAvailable) {
+            return false;
+        }
+
+        for (let i = 0; i < linkGroups.length; i++) {
+            const link = linkGroups[i];
+            if (link && link.source && link.target
+                    && link.source.id === source.id
+                    && link.target.id === sink.id
+                    && link.state === PwLinkState.Active) {
+                return true;
+            }
+        }
+        return false;
+    }
 
     function outputIcon() {
         if (!outputAvailable || outputMuted || outputVolume === 0) {
@@ -124,6 +144,22 @@ Rectangle {
         }
     }
 
+    function toggleInputMonitor() {
+        if (!routeAvailable || routeProcess.running) {
+            return;
+        }
+
+        routeError = "";
+        routeProcess.command = [
+            "python3",
+            Quickshell.shellPath("topbar/AudioRoute.py"),
+            routeConnected ? "disconnect" : "connect",
+            String(source.id),
+            String(sink.id)
+        ];
+        routeProcess.running = true;
+    }
+
     function refreshDisplayModels() {
         if (!audioPopup.visible) {
             return;
@@ -158,6 +194,25 @@ Rectangle {
 
     PwObjectTracker {
         objects: root.candidateStreams
+    }
+
+    PwObjectTracker {
+        objects: root.linkGroups
+    }
+
+    Process {
+        id: routeProcess
+
+        stderr: StdioCollector {
+            id: routeProcessError
+        }
+
+        onExited: function(exitCode) {
+            if (exitCode !== 0) {
+                const detail = routeProcessError.text.trim();
+                root.routeError = detail || "Could not change the input monitor route";
+            }
+        }
     }
 
     Timer {
@@ -476,6 +531,91 @@ Rectangle {
                                     onClicked: root.setDefaultSource(sourceRow.modelData)
                                 }
                             }
+                        }
+                    }
+
+                    Rectangle {
+                        visible: routeSection.visible
+                        width: parent.width
+                        height: visible ? 1 : 0
+                        color: Theme.surface1
+                    }
+
+                    Column {
+                        id: routeSection
+                        visible: root.routeAvailable
+                        width: parent.width
+                        spacing: 8
+
+                        SectionHeader {
+                            title: "INPUT MONITOR"
+                            value: root.routeConnected ? "ON" : "OFF"
+                        }
+
+                        Rectangle {
+                            width: parent.width
+                            height: 34
+                            radius: Theme.radius
+                            color: monitorMouse.containsMouse ? Theme.surface0 : "transparent"
+
+                            Text {
+                                anchors {
+                                    left: parent.left
+                                    right: monitorToggle.left
+                                    verticalCenter: parent.verticalCenter
+                                    leftMargin: 8
+                                    rightMargin: 8
+                                }
+                                text: AudioModel.nodeLabel(root.source)
+                                    + " → " + AudioModel.nodeLabel(root.sink)
+                                color: Theme.text
+                                elide: Text.ElideRight
+                                font.family: Theme.fontFamily
+                                font.pixelSize: Theme.fontSize
+                            }
+
+                            Rectangle {
+                                id: monitorToggle
+                                anchors {
+                                    right: parent.right
+                                    verticalCenter: parent.verticalCenter
+                                    rightMargin: 4
+                                }
+                                width: 58
+                                height: 26
+                                radius: height / 2
+                                color: routeProcess.running
+                                    ? Theme.yellow
+                                    : root.routeConnected ? Theme.green : Theme.surface1
+
+                                Text {
+                                    anchors.centerIn: parent
+                                    text: routeProcess.running
+                                        ? "..."
+                                        : root.routeConnected ? "On" : "Off"
+                                    color: root.routeConnected ? Theme.base : Theme.subtext0
+                                    font.family: Theme.fontFamily
+                                    font.pixelSize: Theme.fontSize
+                                }
+                            }
+
+                            MouseArea {
+                                id: monitorMouse
+                                anchors.fill: parent
+                                enabled: !routeProcess.running
+                                hoverEnabled: true
+                                onClicked: root.toggleInputMonitor()
+                            }
+                        }
+
+                        Text {
+                            visible: root.routeError.length > 0
+                            width: parent.width
+                            text: root.routeError
+                            color: Theme.red
+                            wrapMode: Text.Wrap
+                            font.family: Theme.fontFamily
+                            font.pixelSize: Theme.fontSize - 1
                         }
                     }
 

@@ -35,6 +35,17 @@ PanelWindow {
         return null;
     }
 
+    function workspaceHasToplevel(workspaceId) {
+        const toplevels = Hyprland.toplevels.values;
+        for (let index = 0; index < toplevels.length; index++) {
+            const workspace = toplevels[index].workspace;
+            if (workspace !== null && workspace.id === workspaceId) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     function workspaceIdsForMonitor() {
         const workspaceIds = persistentWorkspaceIds.slice();
         const workspaces = Hyprland.workspaces.values;
@@ -53,6 +64,17 @@ PanelWindow {
     Component.onCompleted: {
         Hyprland.refreshMonitors();
         Hyprland.refreshWorkspaces();
+        Hyprland.refreshToplevels();
+    }
+
+    Connections {
+        target: Hyprland
+
+        function onRawEvent(event) {
+            if (event.name === "movewindowv2") {
+                Hyprland.refreshToplevels();
+            }
+        }
     }
 
     Rectangle {
@@ -88,8 +110,8 @@ PanelWindow {
                         && root.hyprlandMonitor.activeWorkspace.id === workspaceId
                     readonly property bool urgent: workspace !== null
                         && workspace.urgent
-                    readonly property bool occupied: workspace !== null
-                        && workspace.toplevels.values.length > 0
+                    readonly property bool occupied:
+                        root.workspaceHasToplevel(workspaceId)
 
                     width: 22
                     height: workspaceRow.parent.height

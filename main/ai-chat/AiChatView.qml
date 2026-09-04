@@ -164,6 +164,8 @@ Scope {
             spacing: 0
 
             Item {
+                id: header
+                readonly property real controlInset: (height - 34) / 2
                 Layout.fillWidth: true
                 Layout.preferredHeight: card.windowed ? 40 : 52
 
@@ -173,7 +175,7 @@ Scope {
                     anchors {
                         left: parent.left
                         verticalCenter: parent.verticalCenter
-                        leftMargin: card.windowed ? 4 : 16
+                        leftMargin: header.controlInset
                     }
                     radius: 17
                     color: closeMouse.containsMouse ? "#292929" : "transparent"
@@ -200,7 +202,7 @@ Scope {
                     anchors {
                         left: parent.left
                         verticalCenter: parent.verticalCenter
-                        leftMargin: card.windowed ? 42 : 54
+                        leftMargin: header.controlInset + 38
                     }
                     radius: 17
                     color: pinMouse.containsMouse || view.controller.pinned
