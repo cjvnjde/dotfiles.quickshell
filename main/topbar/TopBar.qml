@@ -88,6 +88,8 @@ PanelWindow {
                         && root.hyprlandMonitor.activeWorkspace.id === workspaceId
                     readonly property bool urgent: workspace !== null
                         && workspace.urgent
+                    readonly property bool occupied: workspace !== null
+                        && workspace.toplevels.values.length > 0
 
                     width: 22
                     height: workspaceRow.parent.height
@@ -106,6 +108,20 @@ PanelWindow {
                         font.pixelSize: Theme.fontSize
                     }
 
+                    Rectangle {
+                        anchors {
+                            top: parent.top
+                            right: parent.right
+                            topMargin: 3
+                            rightMargin: 3
+                        }
+                        visible: parent.occupied
+                        width: 4
+                        height: 4
+                        radius: width / 2
+                        color: parent.urgent ? Theme.base : Theme.green
+                    }
+
                     MouseArea {
                         id: workspaceMouse
                         anchors.fill: parent
@@ -113,6 +129,10 @@ PanelWindow {
                         onClicked: {
                             if (parent.workspace !== null) {
                                 parent.workspace.activate();
+                            } else if (Hyprland.usingLua) {
+                                Hyprland.dispatch(
+                                    "hl.dsp.focus({ workspace = "
+                                        + parent.workspaceId + " })");
                             } else {
                                 Hyprland.dispatch("workspace " + parent.workspaceId);
                             }
