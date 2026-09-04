@@ -60,6 +60,12 @@ const COMMAND_CATALOG = [
         immediate: false
     },
     {
+        label: "/project",
+        detail: "Switch AI project",
+        draft: "/project ",
+        immediate: false
+    },
+    {
         label: "/new",
         detail: "Start a new chat and keep this conversation",
         draft: "/new",
@@ -116,6 +122,17 @@ function presetByName(presets, name) {
         const presetName = String(preset.name || "").trim();
         if (presetName.length > 0 && presetName.toLowerCase() === requested) {
             return preset;
+        }
+    }
+    return null;
+}
+
+function projectById(projects, projectId) {
+    const requested = String(projectId || "").trim().toLowerCase();
+    const configured = Array.isArray(projects) ? projects : [];
+    for (const project of configured) {
+        if (project && String(project.id || "").toLowerCase() === requested) {
+            return project;
         }
     }
     return null;
@@ -213,9 +230,40 @@ function removeCommandDraft(draft) {
 }
 
 function commandItems(draft, availableModels, selectedModel,
-        supportedEfforts, selectedEffort, presets, pinned) {
+        supportedEfforts, selectedEffort, presets, pinned, projects,
+        activeProjectId) {
     const value = String(draft || "").replace(/^\s+/, "");
     const lowered = value.toLowerCase();
+    if (lowered.indexOf("/project") === 0
+            && (lowered.length === 8 || lowered.charAt(8) === " ")) {
+        const query = lowered.slice(8).trim();
+        const configured = Array.isArray(projects) ? projects : [];
+        return configured.filter(project => {
+            if (!project) {
+                return false;
+            }
+            const id = String(project.id || "");
+            const label = String(project.label || id);
+            const description = String(project.description || "");
+            return id.length > 0 && (query.length === 0
+                || id.toLowerCase().indexOf(query) >= 0
+                || label.toLowerCase().indexOf(query) >= 0
+                || description.toLowerCase().indexOf(query) >= 0);
+        }).map(project => {
+            const id = String(project.id);
+            const label = String(project.label || id);
+            const description = String(project.description || "");
+            return {
+                label,
+                detail: id === activeProjectId
+                    ? "Current project"
+                    : description.length > 0 ? description : id,
+                draft: "/project " + id,
+                immediate: true
+            };
+        });
+    }
+
     if (lowered.indexOf("/model") === 0
             && (lowered.length === 6 || lowered.charAt(6) === " ")) {
         const query = lowered.slice(6).trim();
@@ -859,6 +907,7 @@ if (typeof module !== "undefined") {
         conciseModelName,
         modelStatusText,
         presetByName,
+        projectById,
         matchingPresetName,
         modelById,
         modelsFromPayload,

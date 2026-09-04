@@ -22,9 +22,28 @@ Scope {
     property string selectedModel: chatPreferences.selectedModel
     property string selectedModelName: "Codex"
     property string selectedEffort: chatPreferences.selectedEffort
+    property var projects: [{
+        id: "general",
+        label: "General",
+        description: "General AI chat"
+    }]
+    property bool projectCatalogLoading: true
+    property string activeProjectId: chatPreferences.activeProjectId || "general"
+    property string pendingProjectId: ""
+    readonly property var activeProject: AiChatLogic.projectById(
+        projects, activeProjectId)
+    readonly property string activeProjectName: activeProject === null
+        ? "General" : String(activeProject.label || activeProject.id)
+    readonly property string activeSandboxName:
+        AiConfig.sandboxNameForProject(activeProjectId)
+    readonly property string activeSandboxWorkspace:
+        AiConfig.sandboxWorkspaceForProject(activeProjectId)
+    readonly property string activeSandboxOutputDirectory:
+        AiConfig.sandboxOutputDirectoryForProject(activeProjectId)
 
     onSelectedModelChanged: chatPreferences.selectedModel = selectedModel
     onSelectedEffortChanged: chatPreferences.selectedEffort = selectedEffort
+    onActiveProjectIdChanged: chatPreferences.activeProjectId = activeProjectId
 
     property string latestActivityItemId: ""
     property var currentResponseItemIds: []
@@ -84,7 +103,7 @@ Scope {
     property var userInterruptedTurnIds: []
     property bool newChatPending: false
     property bool rebuildConfirmationPending: false
-    readonly property string rebuildConfirmationNotice: "Rebuild deletes all chat history and generated files. Run /rebuild again to confirm."
+    readonly property string rebuildConfirmationNotice: "Rebuild deletes this project's chat history and generated files. Run /rebuild again to confirm."
     property bool codexAuthorized: false
     property bool syncingChatKit: false
     property bool codexUpdating: false
@@ -114,7 +133,7 @@ Scope {
     readonly property bool incompatibleActionRunning: attachmentsBusy
         || submissionStarting || isGenerating || newChatPending
         || pendingResumedSettings !== null || sandboxSetupRunning
-        || modelCatalogLoading
+        || projectCatalogLoading || modelCatalogLoading
         || syncingChatKit || codexUpdating || rebuildingSandbox
         || historyBusy || exportBusy || artifactSaveBusy || artifactDeleteBusy
         || prepareThreadOutputs.running || outputIndex.running
@@ -136,11 +155,7 @@ Scope {
     signal threadRenameSucceeded(string threadId)
     signal threadDeleteSucceeded(string threadId)
 
-    Component.onCompleted: {
-        if (AiConfig.backendAutoStart) {
-            startBackend();
-        }
-    }
+    Component.onCompleted: projectCatalogLoader.running = true
 
     function statusForState(value) {
         if (rebuildingSandbox) {
@@ -151,6 +166,9 @@ Scope {
         }
         if (syncingChatKit) {
             return "Loading AI chat kit…";
+        }
+        if (projectCatalogLoading) {
+            return "Loading AI projects…";
         }
         if (sandboxSetupStage === "checking") {
             return "Checking Codex sandbox…";
@@ -195,6 +213,45 @@ Scope {
             return "Backend unavailable";
         }
         return "Disconnected";
+    }
+
+    function openProject(projectId) {
+        if (projectCatalogLoading) {
+            pendingProjectId = String(projectId || "");
+            shown = true;
+            return true;
+        }
+        const project = AiChatLogic.projectById(projects, projectId);
+        shown = true;
+        if (project === null) {
+            lastError = "Unknown project. Type /project to see configured projects.";
+            Qt.callLater(() => focusComposer());
+            return false;
+        }
+        if (project.id === activeProjectId) {
+            open();
+            return true;
+        }
+        if (maintenanceBlocked()) {
+            lastError = "Wait for the current chat operation to finish before switching projects.";
+            Qt.callLater(() => focusComposer());
+            return false;
+        }
+
+        transport.stop();
+        clearConversationForRebuild();
+        resolvedSandboxName = "";
+        codexAuthorized = false;
+        weeklyLimitRemainingPercent = -1;
+        weeklyLimitLoading = true;
+        weeklyLimitError = "";
+        rebuildConfirmationPending = false;
+        rebuildConfirmationTimer.stop();
+        activeProjectId = project.id;
+        lastError = "";
+        startBackend();
+        Qt.callLater(() => focusComposer());
+        return true;
     }
 
     function refreshRateLimits() {
@@ -339,7 +396,7 @@ Scope {
         const argument = pieces.slice(1).join(" ");
         const requiresArgument = command === "/model"
             || command === "/thinking" || command === "/effort"
-            || command === "/preset";
+            || command === "/preset" || command === "/project";
         if (requiresArgument && argument.length === 0) {
             return false;
         }
@@ -375,6 +432,9 @@ Scope {
             break;
         case "/preset":
             choosePreset(argument);
+            break;
+        case "/project":
+            openProject(argument);
             break;
         case "/new":
             newChat();
@@ -738,8 +798,9 @@ Scope {
             continueBackendStartup();
             return;
         }
-        if (sandboxSetupStage.length > 0 || sandboxSetupRunning
-                || rebuildingSandbox || codexUpdating || syncingChatKit) {
+        if (projectCatalogLoading || sandboxSetupStage.length > 0
+                || sandboxSetupRunning || rebuildingSandbox || codexUpdating
+                || syncingChatKit) {
             return;
         }
 
@@ -755,7 +816,7 @@ Scope {
         discoveringSandbox = true;
         beginSandboxSetupStage("preparing", AiConfig.sandboxWorkspaceTimeoutMs);
         resetSandboxWorkspace.command = [
-            "rm", "-rf", "--", AiConfig.sandboxWorkspace
+            "rm", "-rf", "--", activeSandboxWorkspace
         ];
         resetSandboxWorkspace.running = true;
     }
@@ -793,8 +854,9 @@ Scope {
 
     function maintenanceBlocked() {
         return attachmentsBusy || submissionStarting || isGenerating
-            || sandboxSetupRunning || syncingChatKit || codexUpdating
-            || modelCatalogLoading || pendingResumedSettings !== null
+            || projectCatalogLoading || sandboxSetupRunning || syncingChatKit
+            || codexUpdating || modelCatalogLoading
+            || pendingResumedSettings !== null
             || rebuildingSandbox || historyBusy || exportBusy
             || artifactSaveBusy || artifactDeleteBusy
             || prepareThreadOutputs.running || outputIndex.running
@@ -1237,7 +1299,7 @@ Scope {
         }, context || {});
         prepareThreadOutputs.command = [
             "bash", Quickshell.shellPath("ai-chat/AiPrepareOutputs.sh"),
-            resolvedSandboxName, AiConfig.sandboxWorkspace, requestedThreadId
+            resolvedSandboxName, activeSandboxWorkspace, requestedThreadId
         ];
         prepareThreadOutputs.running = true;
         return true;
@@ -1254,7 +1316,7 @@ Scope {
         outputIndexThreadId = currentThreadId;
         outputIndex.command = [
             "python3", Quickshell.shellPath("ai-chat/AiOutputs.py"), "index",
-            AiConfig.sandboxOutputHostDirectory, currentThreadId
+            activeSandboxOutputDirectory, currentThreadId
         ];
         outputIndex.running = true;
     }
@@ -1292,7 +1354,7 @@ Scope {
         artifactSaveBusy = true;
         artifactSaveDialog.command = [
             "python3", Quickshell.shellPath("ai-chat/AiFileDialog.py"), "artifact",
-            AiConfig.sandboxWorkspace, currentThreadId, requestedPath,
+            activeSandboxWorkspace, currentThreadId, requestedPath,
             artifactSaveToken
         ];
         shown = false;
@@ -1329,7 +1391,7 @@ Scope {
         artifactDeletePath = requestedPath;
         deleteArtifactFile.command = [
             "python3", Quickshell.shellPath("ai-chat/AiOutputs.py"),
-            "delete-file", AiConfig.sandboxOutputHostDirectory,
+            "delete-file", activeSandboxOutputDirectory,
             currentThreadId, requestedPath
         ];
         deleteArtifactFile.running = true;
@@ -1493,11 +1555,8 @@ Scope {
         }
         codexAuthorized = false;
         lastError = "";
-        if (resolvedSandboxName.length === 0) {
-            startBackend();
-        } else {
-            syncChatKit();
-        }
+        projectCatalogLoading = true;
+        projectCatalogLoader.running = true;
     }
 
     function findAttachment(token) {
@@ -1968,7 +2027,7 @@ Scope {
             lastError = "";
             cleanupThreadOutputs.command = [
                 "python3", Quickshell.shellPath("ai-chat/AiOutputs.py"), "delete",
-                AiConfig.sandboxOutputHostDirectory, threadId
+                activeSandboxOutputDirectory, threadId
             ];
             cleanupThreadOutputs.running = true;
             threadDeleteSucceeded(threadId);
@@ -2105,6 +2164,53 @@ Scope {
         blockLoading: true
     }
 
+    Process {
+        id: projectCatalogLoader
+
+        command: [
+            "python3", Quickshell.shellPath("ai-chat/AiProjects.py"),
+            Quickshell.shellPath("ai-chat/local/projects")
+        ]
+        stdout: StdioCollector { id: projectCatalogOutput }
+        stderr: StdioCollector {}
+        onExited: function(exitCode) {
+            root.projectCatalogLoading = false;
+            if (exitCode === 0) {
+                try {
+                    const catalog = JSON.parse(projectCatalogOutput.text);
+                    if (catalog && Array.isArray(catalog.projects)
+                            && catalog.projects.length > 0) {
+                        root.projects = catalog.projects;
+                    }
+                    if (catalog && Array.isArray(catalog.warnings)
+                            && catalog.warnings.length > 0) {
+                        root.diagnosticText = catalog.warnings.join(" ");
+                    }
+                } catch (error) {
+                    root.diagnosticText = "Could not parse the AI project catalog.";
+                }
+            } else {
+                root.diagnosticText = "Could not load configured AI projects.";
+            }
+            if (AiChatLogic.projectById(root.projects, root.activeProjectId)
+                    === null) {
+                transport.stop();
+                root.clearConversationForRebuild();
+                root.resolvedSandboxName = "";
+                root.activeProjectId = "general";
+            }
+            const requestedProjectId = root.pendingProjectId;
+            root.pendingProjectId = "";
+            if (requestedProjectId.length > 0
+                    && root.openProject(requestedProjectId)) {
+                return;
+            }
+            if (AiConfig.backendAutoStart) {
+                root.startBackend();
+            }
+        }
+    }
+
     FileView {
         id: preferencesFile
 
@@ -2117,6 +2223,7 @@ Scope {
 
             property string selectedModel: ""
             property string selectedEffort: "default"
+            property string activeProjectId: "general"
         }
     }
 
@@ -2310,7 +2417,8 @@ Scope {
 
         command: [
             "bash", Quickshell.shellPath("ai-chat/AiChatKitSync.sh"),
-            root.resolvedSandboxName, AiConfig.sandboxWorkspace
+            root.resolvedSandboxName, root.activeSandboxWorkspace,
+            root.activeProjectId
         ]
         stderr: StdioCollector {}
         onExited: function(exitCode) {
@@ -2348,7 +2456,7 @@ Scope {
         id: removeChatSandbox
 
         command: AiConfig.sbxCommand.concat([
-            "rm", "--force", AiConfig.sandboxName
+            "rm", "--force", root.activeSandboxName
         ])
         stderr: StdioCollector {}
         onExited: function(exitCode) {
@@ -2417,13 +2525,13 @@ Scope {
             }
             const sandboxes = sandboxListOutput.text.split(/\r?\n/)
                 .map(name => name.trim()).filter(name => name.length > 0);
-            if (sandboxes.indexOf(AiConfig.sandboxName) < 0) {
+            if (sandboxes.indexOf(root.activeSandboxName) < 0) {
                 root.rebuildRequested = false;
                 root.createSandbox();
                 return;
             }
 
-            root.resolvedSandboxName = AiConfig.sandboxName;
+            root.resolvedSandboxName = root.activeSandboxName;
             root.finishSandboxSetup();
             if (root.rebuildRequested) {
                 root.beginSandboxRemoval();
@@ -2452,7 +2560,8 @@ Scope {
             }
             prepareSandboxWorkspace.command = [
                 "install", "-d", "-m", "700", "--",
-                AiConfig.sandboxWorkspace, AiConfig.sandboxOutputHostDirectory
+                root.activeSandboxWorkspace,
+                root.activeSandboxOutputDirectory
             ];
             root.beginSandboxSetupStage(
                 "preparing", AiConfig.sandboxWorkspaceTimeoutMs);
@@ -2474,8 +2583,8 @@ Scope {
                 return;
             }
             createChatSandbox.command = AiConfig.sbxCommand.concat([
-                "create", "codex", AiConfig.sandboxWorkspace,
-                "--name", AiConfig.sandboxName, "--quiet"
+                "create", "codex", root.activeSandboxWorkspace,
+                "--name", root.activeSandboxName, "--quiet"
             ]);
             root.beginSandboxSetupStage(
                 "creating", AiConfig.sandboxCreateTimeoutMs);
@@ -2498,7 +2607,7 @@ Scope {
                     "Could not create the dedicated Codex sandbox. Run sbx diagnose, then use /reconnect.");
                 return;
             }
-            root.resolvedSandboxName = AiConfig.sandboxName;
+            root.resolvedSandboxName = root.activeSandboxName;
             root.diagnosticText = "Using dedicated sandbox " + root.resolvedSandboxName;
             root.finishSandboxSetup();
             if (root.captureRequested) {
@@ -2715,6 +2824,9 @@ Scope {
 
         function toggle(): void { root.toggle(); }
         function open(): void { root.open(); }
+        function openProject(projectId: string): void {
+            root.openProject(projectId);
+        }
         function close(): void { root.close(); }
         function pin(): void { root.setPinned(true); root.open(); }
         function unpin(): void { root.setPinned(false); }

@@ -73,11 +73,12 @@ bind = SUPER, N, exec, qs -c main ipc call notes toggle
 
 ## AI Quick Chat
 
-The AI backend starts with the shell so the sandbox and Codex connection are
-ready before the overlay opens. The AI control in the top bar shows startup
-state, then requests the remaining weekly subscription allowance through the
-same sandbox and its credential proxy. It shows `Ready` when the proxy does not
-expose subscription limits. Click the control to open the chat.
+The AI backend starts with the shell for the last active project so its sandbox
+and Codex connection are ready before the overlay opens. The AI control in the
+top bar shows startup state, then requests the remaining weekly subscription
+allowance through the active sandbox and its credential proxy. It shows `Ready`
+when the proxy does not expose subscription limits. Click the control to open
+the chat.
 
 Press `Super+A` to open a compact AI chat overlay, or `Super+Shift+A` to select
 a screen region and attach its untouched PNG to a new prompt.
@@ -108,15 +109,18 @@ opens persisted Codex threads. `/pin` appears in popup mode and moves the chat
 into a managed
 window; `/unpin` appears there instead and returns it to the popup. `/model`
 changes the active model, `/thinking` changes reasoning effort, and
-`/preset NAME` applies a configured model-and-thinking pair. The selected
-model-and-thinking combination persists across shell restarts.
-`/new` starts a clean chat without deleting the previous thread or its
-generated files. `/reconnect` reloads the chat-only kit and app-server.
-`/update` updates Codex inside the existing sandbox, then reconnects without
+`/preset NAME` applies a configured model-and-thinking pair. `/project NAME`
+switches to a separately isolated AI project; typing `/project` lists and
+filters configured projects. The selected project, model, and thinking level
+persist across shell restarts. `/new` starts a clean chat inside the active
+project without deleting the previous thread or its generated files.
+`/reconnect` reloads the project catalog, active configuration, and app-server.
+`/update` updates Codex inside the active sandbox, then reconnects without
 removing history or generated files. `/rebuild` first warns that it will delete
-all sandbox threads and managed outputs; run it a second time within 30 seconds
-to perform the destructive rebuild. Model and thinking choices come from
-app-server's `model/list` response and are applied to subsequent turns. `Tab`
+the active project's sandbox threads and managed outputs; run it a second time
+within 30 seconds to perform the destructive rebuild.
+Model and thinking choices come from app-server's `model/list` response and are
+applied to subsequent turns. `Tab`
 completes the highlighted command without executing it. `Enter` executes a
 complete command immediately, accepts a highlighted partial command, or sends
 a message. `Shift+Enter` inserts a newline, and `Escape` hides the overlay
@@ -140,21 +144,24 @@ The footer appends a preset name only while both the selected model and thinking
 level exactly match it, including when those values were selected manually.
 Preset configuration stays on the host and is not copied into the sandbox.
 
-The feature owns one dedicated sandbox named `quickshell-ai-chat`, configured
-in [`ai-chat/AiConfig.qml`](ai-chat/AiConfig.qml). It creates that sandbox with
-`sbx create codex` and a mode-`0700` private workspace below Quickshell's state
-directory.
-It never attaches the user's home or a project. Conversation history is the
-app-server's persisted thread store; the client neither mirrors nor rewrites
-transcripts. History queries require the exact chat working directory and only
-source kinds emitted by Codex app-server, so unrelated Codex threads cannot
-appear. New Chat interrupts an active turn when needed, clears only the loaded
-view, and leaves the previous thread available in History. The embedded
-app-server disables Codex's startup update prompt. Codex therefore changes only
-when `/update` is run. That update remains
-in the current container; recreating the sandbox restores the bundled version
-before `/rebuild` immediately updates it again.
-Credentials remain managed by Docker Sandboxes and are not copied into the
+The general chat keeps the existing `quickshell-ai-chat` sandbox. Every named
+project gets a lazily created sandbox named `quickshell-ai-chat-<project-id>`
+and a mode-`0700` private workspace below Quickshell's state directory. Project
+IDs are lowercase letters, numbers, and internal hyphens. Each sandbox has its
+own Codex home, MCP configuration, thread store, generated outputs, and copied
+instructions and skills. Only the tracked sandbox safety instructions and
+explicit global configuration are shared by composition.
+
+The client never attaches the user's home or an arbitrary project. Conversation
+history remains in each app-server's persisted thread store; the client neither
+mirrors nor rewrites transcripts. History queries use the exact chat working
+directory and only source kinds emitted by Codex app-server. New Chat interrupts
+an active turn when needed, clears only the loaded view, and leaves the previous
+thread available in that project's History. The embedded app-server disables
+Codex's startup update prompt. Codex therefore changes only when `/update` is
+run for the active project. Recreating a named sandbox restores its bundled
+Codex version before `/rebuild` immediately updates it again. Credentials
+remain managed inside each Docker Sandbox and are not copied into the
 Quickshell process or private workspace. Confirm Codex access with:
 
 ```sh
@@ -182,31 +189,63 @@ retried three times. A timeout stops the stuck `sbx` process and shows a
 recovery command. Resolve sign-in, daemon, network, or filesystem problems in a
 terminal, then select **Reconnect** in the error footer or run `/reconnect`.
 
-### Chat-only instructions and skills
+### Private Codex projects
 
-[`ai-chat/AiChatKit`](ai-chat/AiChatKit) is the editable configuration copied
-into only the `quickshell-ai-chat` sandbox. Quickshell replaces
-`$HOME/quickshell-ai-chat-kit` from that folder before every app-server start
-and uses it as Codex's working directory. `ai-chat/AiChatKit/AGENTS.md`
-supplies the always-on custom instructions, including the managed final-output
-path `/home/agent/quickshell-ai-outputs`. Add chat-only skills as
-`ai-chat/AiChatKit/.agents/skills/<skill-name>/SKILL.md`; supporting scripts,
-references, and assets can stay beside each `SKILL.md`.
+The tracked [`ai-chat/AiChatKit`](ai-chat/AiChatKit) supplies sandbox safety
+instructions and the managed final-output path
+`/home/agent/quickshell-ai-outputs`. Personal configuration stays below the
+gitignored `ai-chat/local` directory:
 
-Run `/reconnect` after editing the kit. Use `/new` as well when instructions
-must apply to a fresh thread. The kit is copied rather than mounted: sandbox
-changes to its copy are discarded by the next reconnect, while host edits
-remain durable in the Quickshell configuration.
+```text
+local/
+├── global/.codex/
+│   ├── AGENTS.md
+│   ├── config.toml
+│   └── skills/<skill-name>/SKILL.md
+└── projects/<project-id>/.codex/
+    ├── project.json
+    ├── AGENTS.md
+    ├── config.toml
+    └── skills/<skill-name>/SKILL.md
+```
+
+`global/.codex` applies to general chat and every named project. A named
+project then overlays its own instructions, skills, and MCP configuration.
+`project.json` accepts a display `label` and `description`; the lowercase
+directory name is the project ID used by `/project` and IPC. The bundled local
+examples define `english` and `jira` projects plus public mock MCP servers.
+
+Quickshell composes the selected source `.codex` directories before each
+app-server start. It appends private instructions to the tracked safety
+instructions, places composed skills in the sandbox working directory's native
+`.agents/skills` discovery path, and appends MCP tables to the sandbox-managed
+`~/.codex/config.toml`. The original Docker Sandbox configuration, including
+its credential gateway, remains intact. Duplicate TOML keys or MCP server names
+are configuration errors rather than implicit overrides.
+
+Remote MCP hosts must also be permitted by that sandbox's network policy. For
+the bundled test projects:
+
+```sh
+sbx policy allow network --sandbox quickshell-ai-chat mcpplaygroundonline.com:443
+sbx policy allow network --sandbox quickshell-ai-chat-english mcpplaygroundonline.com:443
+sbx policy allow network --sandbox quickshell-ai-chat-jira mcpplaygroundonline.com:443
+```
+
+Run `/reconnect` after editing private configuration. It reloads the project
+catalog and the active project's composed Codex configuration. Use `/new` when
+new instructions must apply to a fresh thread. Sandbox-side changes to copied
+instructions and skills are discarded by the next reconnect.
 
 ### Sandbox maintenance
 
-`/update` preserves the current sandbox, app-server threads, and generated
-files while updating Codex, then reloads the kit and resumes the selected
-thread without appending stale local messages. `/rebuild` is destructive: after
-the second confirmation command, it clears the loaded chat, removes the
-dedicated sandbox and its thread store, resets the private host workspace and
-managed outputs, recreates the sandbox, updates Codex, and reloads the
-chat-only kit.
+`/update` preserves the active sandbox, its app-server threads, and generated
+files while updating Codex, then reloads that project's configuration and
+resumes the selected thread without appending stale local messages. `/rebuild`
+is destructive only for the active project: after the second confirmation it
+clears the loaded chat, removes that sandbox and its thread store, resets its
+private host workspace and managed outputs, recreates the sandbox, updates
+Codex, and reloads the composed configuration.
 
 The pin button beside the chat close button switches the centered overlay into
 a standard toplevel window managed by the compositor. While pinned, `ai toggle`
@@ -219,6 +258,9 @@ Available IPC calls are:
 ```sh
 qs -c main ipc call ai toggle
 qs -c main ipc call ai open
+qs -c main ipc call ai openProject general
+qs -c main ipc call ai openProject english
+qs -c main ipc call ai openProject jira
 qs -c main ipc call ai close
 qs -c main ipc call ai pin
 qs -c main ipc call ai unpin
@@ -226,6 +268,14 @@ qs -c main ipc call ai screenshot
 qs -c main ipc call ai newChat
 qs -c main ipc call ai history
 qs -c main ipc call ai exportChat
+```
+
+Project IPC is intended for compositor keybinds. For example:
+
+```ini
+bind = SUPER, A, exec, qs -c main ipc call ai openProject general
+bind = SUPER, E, exec, qs -c main ipc call ai openProject english
+bind = SUPER, J, exec, qs -c main ipc call ai openProject jira
 ```
 
 The export and artifact helpers return completion, cancellation, and failure

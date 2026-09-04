@@ -96,7 +96,8 @@ Scope {
         implicitWidth: AiConfig.chatWidth
         implicitHeight: Math.min(AiConfig.chatMaxHeight, 860)
         minimumSize: Qt.size(480, 360)
-        title: view.controller.currentTitle
+        title: view.controller.activeProjectName + " · "
+            + view.controller.currentTitle
         color: "#171717"
 
         onVisibleChanged: {
@@ -228,8 +229,9 @@ Scope {
                     anchors.centerIn: parent
                     width: parent.width - 260
                     text: view.controller.historyVisible
-                        ? "Saved conversations"
-                        : view.controller.currentTitle
+                        ? view.controller.activeProjectName + " conversations"
+                        : view.controller.activeProjectName + " · "
+                            + view.controller.currentTitle
                     color: "#f2f2f2"
                     elide: Text.ElideRight
                     horizontalAlignment: Text.AlignHCenter

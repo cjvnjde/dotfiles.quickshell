@@ -259,3 +259,45 @@ test("threadTitle hides internal attachment metadata and paths", () => {
     assert.equal(logic.threadTitle({ preview }), "notes]]draft.txt");
     assert.doesNotMatch(logic.threadTitle({ preview }), /quickshell-ai|private/);
 });
+
+test("project command lists, filters, and marks configured projects", () => {
+    const projects = [
+        { id: "general", label: "General", description: "General AI chat" },
+        { id: "english", label: "English", description: "Language coach" },
+        { id: "jira", label: "Jira", description: "Issue management" }
+    ];
+
+    assert.deepEqual(
+        logic.commandItems(
+            "/project", [], "", [], "", [], false, projects, "english"
+        ),
+        [
+            {
+                label: "General",
+                detail: "General AI chat",
+                draft: "/project general",
+                immediate: true
+            },
+            {
+                label: "English",
+                detail: "Current project",
+                draft: "/project english",
+                immediate: true
+            },
+            {
+                label: "Jira",
+                detail: "Issue management",
+                draft: "/project jira",
+                immediate: true
+            }
+        ]
+    );
+    assert.deepEqual(
+        logic.commandItems(
+            "/project lang", [], "", [], "", [], false, projects, "general"
+        ).map(item => item.draft),
+        ["/project english"]
+    );
+    assert.equal(logic.projectById(projects, "JIRA"), projects[2]);
+    assert.equal(logic.projectById(projects, "missing"), null);
+});

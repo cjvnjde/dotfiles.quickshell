@@ -36,7 +36,7 @@ restored automatically.
 Start the shell configuration with:
 
 ```bash
-qs -c main
+qs -n -c main
 ```
 
 See [`main/README.md`](main/README.md) for the available controls and behavior.

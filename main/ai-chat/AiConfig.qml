@@ -22,6 +22,18 @@ QtObject {
     readonly property int sandboxCheckRetryDelayMs: 3000
     readonly property int sandboxWorkspaceTimeoutMs: 15000
     readonly property int sandboxCreateTimeoutMs: 300000
+    function sandboxNameForProject(projectId) {
+        return projectId === "general" ? sandboxName
+            : sandboxName + "-" + projectId;
+    }
+    function sandboxWorkspaceForProject(projectId) {
+        return projectId === "general" ? sandboxWorkspace
+            : Quickshell.stateDir + "/ai-projects/" + projectId
+                + "/sandbox-workspace";
+    }
+    function sandboxOutputDirectoryForProject(projectId) {
+        return sandboxWorkspaceForProject(projectId) + "/outputs";
+    }
     readonly property bool backendAutoStart: true
     readonly property bool debug: Quickshell.env("QUICKSHELL_AI_DEBUG") === "1"
     readonly property int chatWidth: 760
