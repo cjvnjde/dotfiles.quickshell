@@ -135,22 +135,38 @@ levels shown by `/model` and `/thinking`:
 ```json
 {
   "presets": [
-    { "name": "fast", "model": "gpt-5.6-terra", "thinking": "low" }
+    { "name": "fast", "model": "gpt-6-astra", "thinking": "low" }
   ]
 }
 ```
+
+The bundled presets all use GPT-6 Astra: `fast` uses `low`, `small` uses
+`medium`, `default` uses `high`, and `smart` uses `xhigh` thinking.
 
 The footer appends a preset name only while both the selected model and thinking
 level exactly match it, including when those values were selected manually.
 Preset configuration stays on the host and is not copied into the sandbox.
 
 The general chat keeps the existing `quickshell-ai-chat` sandbox. Every named
-project gets a lazily created sandbox named `quickshell-ai-chat-<project-id>`
+project gets a sandbox named `quickshell-ai-chat-<project-id>`
 and a mode-`0700` private workspace below Quickshell's state directory. Project
 IDs are lowercase letters, numbers, and internal hyphens. Each sandbox has its
 own Codex home, MCP configuration, thread store, generated outputs, and copied
 instructions and skills. Only the tracked sandbox safety instructions and
 explicit global configuration are shared by composition.
+
+After the active project's backend connects, Quickshell creates missing project
+sandboxes and starts stopped ones in the background, one project at a time.
+Switching to a prepared project skips sandbox discovery and creation; switching
+to one still warming up waits for that same preparation instead of starting a
+duplicate. Warmup failures are logged and retried when that project is selected.
+Only the active project runs a Codex app-server: configuration sync and the
+app-server handshake still run on each switch. Keeping the other sandboxes
+running trades additional memory for avoiding their cold-start delay.
+Each prepared sandbox holds an attached, idle session so sandboxd does not
+auto-stop it after 30 seconds. These sessions end when Quickshell exits or a
+project is removed from the reloaded catalog; reconnect and rebuild release
+the active project's session before preparing it again.
 
 The client never attaches the user's home or an arbitrary project. Conversation
 history remains in each app-server's persisted thread store; the client neither
@@ -184,8 +200,9 @@ sbx exec quickshell-ai-chat sh -lc 'codex app-server --help'
 ```
 
 Sandbox checks stop after 20 seconds, workspace preparation after 15 seconds,
-and first-time sandbox creation after five minutes. A failed startup check is
-retried three times. A timeout stops the stuck `sbx` process and shows a
+first-time sandbox creation after five minutes, and sandbox startup after
+60 seconds. A failed startup check is retried three times. A timeout stops the
+stuck `sbx` process before allowing another attempt and shows a
 recovery command. Resolve sign-in, daemon, network, or filesystem problems in a
 terminal, then select **Reconnect** in the error footer or run `/reconnect`.
 
@@ -233,7 +250,8 @@ sbx policy allow network --sandbox quickshell-ai-chat-jira mcpplaygroundonline.c
 ```
 
 Run `/reconnect` after editing private configuration. It reloads the project
-catalog and the active project's composed Codex configuration. Use `/new` when
+catalog, rechecks the active sandbox, and reloads that project's composed Codex
+configuration. Use `/new` when
 new instructions must apply to a fresh thread. Sandbox-side changes to copied
 instructions and skills are discarded by the next reconnect.
 

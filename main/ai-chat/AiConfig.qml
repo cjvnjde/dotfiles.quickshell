@@ -22,6 +22,7 @@ QtObject {
     readonly property int sandboxCheckRetryDelayMs: 3000
     readonly property int sandboxWorkspaceTimeoutMs: 15000
     readonly property int sandboxCreateTimeoutMs: 300000
+    readonly property int sandboxStartTimeoutMs: 60000
     function sandboxNameForProject(projectId) {
         return projectId === "general" ? sandboxName
             : sandboxName + "-" + projectId;

@@ -2,23 +2,23 @@
   "presets": [
     {
       "name": "fast",
-      "model": "gpt-5.6-terra",
+      "model": "gpt-6-astra",
       "thinking": "low"
     },
     {
       "name": "small",
-      "model": "gpt-5.6-luna",
-      "thinking": "high"
+      "model": "gpt-6-astra",
+      "thinking": "medium"
     },
     {
       "name": "smart",
-      "model": "gpt-5.6-sol",
-      "thinking": "high"
+      "model": "gpt-6-astra",
+      "thinking": "xhigh"
     },
     {
       "name": "default",
-      "model": "gpt-5.6-sol",
-      "thinking": "low"
+      "model": "gpt-6-astra",
+      "thinking": "high"
     }
   ]
 }

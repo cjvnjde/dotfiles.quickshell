@@ -63,13 +63,13 @@ Scope {
     property var conversationHostFiles: []
     property string diagnosticText: ""
     property string resolvedSandboxName: ""
-    property bool discoveringSandbox: false
-    property string sandboxSetupStage: ""
-    property bool sandboxSetupTimedOut: false
-    property int sandboxDiscoveryFailures: 0
-    readonly property bool sandboxSetupRunning: sandboxDiscovery.running
-        || sandboxDiscoveryRetry.running || resetSandboxWorkspace.running
-        || prepareSandboxWorkspace.running || createChatSandbox.running
+    property var sandboxSetups: ({})
+    property string warmingProjectId: ""
+    readonly property var activeSandboxSetup: sandboxSetups[activeProjectId] || null
+    readonly property string sandboxSetupStage: activeSandboxSetup === null
+        ? "" : activeSandboxSetup.state
+    readonly property bool sandboxSetupRunning: activeSandboxSetup !== null
+        && activeSandboxSetup.running
     property bool captureRequested: false
     property int conversationGeneration: 0
     property string currentTitle: "New conversation"
@@ -182,8 +182,8 @@ Scope {
         if (sandboxSetupStage === "creating") {
             return "Creating Codex sandbox…";
         }
-        if (discoveringSandbox) {
-            return "Setting up Codex sandbox…";
+        if (sandboxSetupStage === "starting") {
+            return "Starting Codex sandbox…";
         }
         if (newChatPending) {
             return "Stopping current response…";
@@ -707,67 +707,13 @@ Scope {
         latestActivityItemId = "";
     }
 
-    function beginSandboxSetupStage(stage, timeoutMs) {
-        sandboxSetupStage = stage;
-        sandboxSetupTimeout.interval = timeoutMs;
-        sandboxSetupTimeout.restart();
-    }
-
-    function finishSandboxSetup() {
-        sandboxSetupTimeout.stop();
-        sandboxDiscoveryRetry.stop();
-        sandboxSetupStage = "";
-        sandboxSetupTimedOut = false;
-        discoveringSandbox = false;
-    }
-
     function failSandboxSetup(message) {
-        sandboxSetupTimeout.stop();
-        sandboxDiscoveryRetry.stop();
-        sandboxSetupStage = "";
-        discoveringSandbox = false;
         captureRequested = false;
         rebuildRequested = false;
         codexUpdateRequested = false;
         pendingMaintenanceNotice = "";
         transport.state = "error";
         lastError = message;
-    }
-
-    function stopSandboxSetupProcess() {
-        if (sandboxDiscovery.running) {
-            sandboxDiscovery.signal(9);
-        }
-        if (resetSandboxWorkspace.running) {
-            resetSandboxWorkspace.signal(9);
-        }
-        if (prepareSandboxWorkspace.running) {
-            prepareSandboxWorkspace.signal(9);
-        }
-        if (createChatSandbox.running) {
-            createChatSandbox.signal(9);
-        }
-    }
-
-    function sandboxSetupTimeoutMessage(stage) {
-        if (stage === "checking") {
-            return "sbx ls timed out. Run sbx ls in a terminal, resolve Docker "
-                + "sign-in or sandboxd, then use /reconnect.";
-        }
-        if (stage === "creating") {
-            return "sbx create timed out. Run sbx diagnose in a terminal, "
-                + "then use /reconnect.";
-        }
-        return "Preparing the sandbox workspace timed out. Check filesystem "
-            + "access, then use /reconnect.";
-    }
-    function sandboxDiscoveryFailureMessage() {
-        const detail = sandboxListError.text.trim()
-            .replace(/\s+/g, " ").slice(0, 180);
-        const reason = detail.length > 0
-            ? "sbx ls failed: " + detail
-            : "Could not list sbx sandboxes.";
-        return reason + " Use Reconnect to retry.";
     }
 
 
@@ -793,32 +739,71 @@ Scope {
         setPinned(!pinned);
     }
 
+    function sandboxSetupForProject(projectId) {
+        if (!sandboxSetups[projectId]) {
+            const setup = sandboxSetupComponent.createObject(root, { projectId: projectId });
+            sandboxSetups = Object.assign({}, sandboxSetups, { [projectId]: setup });
+        }
+        return sandboxSetups[projectId];
+    }
+
+    function releaseRemovedSandboxes() {
+        const retained = {};
+        for (const projectId of Object.keys(sandboxSetups)) {
+            if (AiChatLogic.projectById(projects, projectId) !== null) {
+                retained[projectId] = sandboxSetups[projectId];
+                continue;
+            }
+            if (warmingProjectId === projectId) {
+                warmingProjectId = "";
+            }
+            sandboxSetups[projectId].destroy();
+        }
+        sandboxSetups = retained;
+    }
+
+    function warmNextSandbox() {
+        if (!AiConfig.backendAutoStart || projectCatalogLoading
+                || !transport.ready || warmingProjectId.length > 0) {
+            return;
+        }
+        for (const project of projects) {
+            if (project.id === activeProjectId) {
+                continue;
+            }
+            const setup = sandboxSetupForProject(project.id);
+            if (setup.state === "idle") {
+                warmingProjectId = project.id;
+                setup.start();
+                return;
+            }
+        }
+    }
+
     function startBackend() {
+        if (projectCatalogLoading || rebuildingSandbox || codexUpdating
+                || syncingChatKit) {
+            return;
+        }
         if (resolvedSandboxName.length > 0) {
             continueBackendStartup();
             return;
         }
-        if (projectCatalogLoading || sandboxSetupStage.length > 0
-                || sandboxSetupRunning || rebuildingSandbox || codexUpdating
-                || syncingChatKit) {
+        const setup = sandboxSetupForProject(activeProjectId);
+        if (!setup.ready) {
+            lastError = "";
+            setup.start();
             return;
         }
-
-        sandboxSetupTimedOut = false;
-        sandboxDiscoveryFailures = 0;
-        discoveringSandbox = true;
-        lastError = "";
-        beginSandboxSetupStage("checking", AiConfig.sandboxCheckTimeoutMs);
-        sandboxDiscovery.running = true;
-    }
-
-    function createSandbox() {
-        discoveringSandbox = true;
-        beginSandboxSetupStage("preparing", AiConfig.sandboxWorkspaceTimeoutMs);
-        resetSandboxWorkspace.command = [
-            "rm", "-rf", "--", activeSandboxWorkspace
-        ];
-        resetSandboxWorkspace.running = true;
+        resolvedSandboxName = setup.sandboxName;
+        if (rebuildRequested) {
+            beginSandboxRemoval();
+            return;
+        }
+        if (captureRequested) {
+            beginCapture();
+        }
+        continueBackendStartup();
     }
 
     function continueBackendStartup() {
@@ -931,6 +916,7 @@ Scope {
             return;
         }
         rebuildingSandbox = true;
+        activeSandboxSetup.invalidate();
         removeChatSandbox.running = true;
     }
 
@@ -1552,6 +1538,11 @@ Scope {
         if (maintenanceBlocked()) {
             lastError = "Wait for the current chat operation to finish before reconnecting.";
             return;
+        }
+        transport.stop();
+        resolvedSandboxName = "";
+        if (activeSandboxSetup !== null) {
+            activeSandboxSetup.invalidate();
         }
         codexAuthorized = false;
         lastError = "";
@@ -2199,6 +2190,7 @@ Scope {
                 root.resolvedSandboxName = "";
                 root.activeProjectId = "general";
             }
+            root.releaseRemovedSandboxes();
             const requestedProjectId = root.pendingProjectId;
             root.pendingProjectId = "";
             if (requestedProjectId.length > 0
@@ -2474,146 +2466,33 @@ Scope {
         }
     }
 
-    Timer {
-        id: sandboxSetupTimeout
+    Component {
+        id: sandboxSetupComponent
 
-        repeat: false
-        onTriggered: {
-            if (root.sandboxSetupStage.length === 0) {
-                return;
-            }
-            const stage = root.sandboxSetupStage;
-            root.sandboxSetupTimedOut = true;
-            root.stopSandboxSetupProcess();
-            root.failSandboxSetup(root.sandboxSetupTimeoutMessage(stage));
-        }
-    }
-    Timer {
-        id: sandboxDiscoveryRetry
-
-        interval: AiConfig.sandboxCheckRetryDelayMs
-        repeat: false
-        onTriggered: {
-            root.beginSandboxSetupStage(
-                "checking", AiConfig.sandboxCheckTimeoutMs);
-            sandboxDiscovery.running = true;
-        }
-    }
-
-
-    Process {
-        id: sandboxDiscovery
-
-        command: AiConfig.sbxCommand.concat(["ls", "-q"])
-        stdout: StdioCollector { id: sandboxListOutput }
-        stderr: StdioCollector { id: sandboxListError }
-        onExited: function(exitCode) {
-            sandboxSetupTimeout.stop();
-            if (root.sandboxSetupTimedOut) {
-                return;
-            }
-            if (exitCode !== 0) {
-                root.sandboxDiscoveryFailures++;
-                if (root.sandboxDiscoveryFailures
-                        <= AiConfig.sandboxCheckRetryLimit) {
-                    root.sandboxSetupStage = "retrying";
-                    sandboxDiscoveryRetry.restart();
-                    return;
+        AiSandboxSetup {
+            onCreated: {
+                if (projectId === root.activeProjectId) {
+                    root.rebuildRequested = false;
                 }
-                root.failSandboxSetup(root.sandboxDiscoveryFailureMessage());
-                return;
             }
-            const sandboxes = sandboxListOutput.text.split(/\r?\n/)
-                .map(name => name.trim()).filter(name => name.length > 0);
-            if (sandboxes.indexOf(root.activeSandboxName) < 0) {
-                root.rebuildRequested = false;
-                root.createSandbox();
-                return;
+            onFinished: succeeded => {
+                if (root.warmingProjectId === projectId) {
+                    root.warmingProjectId = "";
+                }
+                if (projectId === root.activeProjectId
+                        && root.resolvedSandboxName.length === 0) {
+                    if (succeeded) {
+                        root.startBackend();
+                    } else {
+                        root.failSandboxSetup(lastError);
+                    }
+                } else if (!succeeded) {
+                    root.diagnosticText = "Could not warm project " + projectId
+                        + ": " + lastError;
+                    console.warn(root.diagnosticText);
+                }
+                Qt.callLater(() => root.warmNextSandbox());
             }
-
-            root.resolvedSandboxName = root.activeSandboxName;
-            root.finishSandboxSetup();
-            if (root.rebuildRequested) {
-                root.beginSandboxRemoval();
-                return;
-            }
-            if (root.captureRequested) {
-                root.beginCapture();
-            }
-            root.continueBackendStartup();
-        }
-    }
-
-    Process {
-        id: resetSandboxWorkspace
-
-        stderr: StdioCollector {}
-        onExited: function(exitCode) {
-            sandboxSetupTimeout.stop();
-            if (root.sandboxSetupTimedOut) {
-                return;
-            }
-            if (exitCode !== 0) {
-                root.failSandboxSetup(
-                    "Could not reset the private AI sandbox workspace.");
-                return;
-            }
-            prepareSandboxWorkspace.command = [
-                "install", "-d", "-m", "700", "--",
-                root.activeSandboxWorkspace,
-                root.activeSandboxOutputDirectory
-            ];
-            root.beginSandboxSetupStage(
-                "preparing", AiConfig.sandboxWorkspaceTimeoutMs);
-            prepareSandboxWorkspace.running = true;
-        }
-    }
-
-    Process {
-        id: prepareSandboxWorkspace
-
-        onExited: function(exitCode) {
-            sandboxSetupTimeout.stop();
-            if (root.sandboxSetupTimedOut) {
-                return;
-            }
-            if (exitCode !== 0) {
-                root.failSandboxSetup(
-                    "Could not create the private AI sandbox workspace.");
-                return;
-            }
-            createChatSandbox.command = AiConfig.sbxCommand.concat([
-                "create", "codex", root.activeSandboxWorkspace,
-                "--name", root.activeSandboxName, "--quiet"
-            ]);
-            root.beginSandboxSetupStage(
-                "creating", AiConfig.sandboxCreateTimeoutMs);
-            createChatSandbox.running = true;
-        }
-    }
-
-    Process {
-        id: createChatSandbox
-
-        stdout: StdioCollector {}
-        stderr: StdioCollector {}
-        onExited: function(exitCode) {
-            sandboxSetupTimeout.stop();
-            if (root.sandboxSetupTimedOut) {
-                return;
-            }
-            if (exitCode !== 0) {
-                root.failSandboxSetup(
-                    "Could not create the dedicated Codex sandbox. Run sbx diagnose, then use /reconnect.");
-                return;
-            }
-            root.resolvedSandboxName = root.activeSandboxName;
-            root.diagnosticText = "Using dedicated sandbox " + root.resolvedSandboxName;
-            root.finishSandboxSetup();
-            if (root.captureRequested) {
-                root.beginCapture();
-            }
-            root.continueBackendStartup();
         }
     }
 
@@ -2682,6 +2561,7 @@ Scope {
                 }, "initialize", {});
             } else if (state === "ready") {
                 root.refreshRateLimits();
+                Qt.callLater(() => root.warmNextSandbox());
             } else if (state === "error") {
                 root.codexAuthorized = false;
                 root.weeklyLimitRemainingPercent = -1;

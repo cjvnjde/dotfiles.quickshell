@@ -1,5 +1,6 @@
 singleton AiConfig 1.0 AiConfig.qml
 CodexAppServer 1.0 CodexAppServer.qml
+AiSandboxSetup 1.0 AiSandboxSetup.qml
 ScreenshotService 1.0 ScreenshotService.qml
 AiChat 1.0 AiChat.qml
 AiChatView 1.0 AiChatView.qml
