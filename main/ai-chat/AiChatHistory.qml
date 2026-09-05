@@ -11,13 +11,13 @@ Item {
 
     component SmallButton: Rectangle {
         property string label: ""
-        property color labelColor: "#d5d5d5"
+        property color labelColor: AiChatTheme.text
         signal clicked()
 
         implicitWidth: buttonLabel.implicitWidth + 16
         implicitHeight: 28
         radius: 8
-        color: buttonMouse.containsMouse && enabled ? "#353535" : "#292929"
+        color: buttonMouse.containsMouse && enabled ? AiChatTheme.hover : AiChatTheme.raised
         opacity: enabled ? 1 : 0.38
 
         Text {
@@ -69,7 +69,7 @@ Item {
             Text {
                 Layout.fillWidth: true
                 text: "Conversation history"
-                color: "#f1f1f1"
+                color: AiChatTheme.text
                 font.family: Theme.fontFamily
                 font.pixelSize: 16
                 font.weight: Font.DemiBold
@@ -90,7 +90,7 @@ Item {
             Text {
                 Layout.fillWidth: true
                 text: historyRoot.controller.historyError
-                color: Theme.red
+                color: AiChatTheme.error
                 wrapMode: Text.Wrap
                 font.family: Theme.fontFamily
                 font.pixelSize: 12
@@ -112,7 +112,7 @@ Item {
                 visible: historyRoot.controller.historyLoading
                     && historyRoot.controller.historyThreads.count === 0
                 text: "Loading conversations…"
-                color: "#999999"
+                color: AiChatTheme.mutedText
                 font.family: Theme.fontFamily
                 font.pixelSize: 13
             }
@@ -123,7 +123,7 @@ Item {
                     && historyRoot.controller.historyThreads.count === 0
                     && historyRoot.controller.historyError.length === 0
                 text: "No saved conversations"
-                color: "#888888"
+                color: AiChatTheme.mutedText
                 font.family: Theme.fontFamily
                 font.pixelSize: 13
             }
@@ -155,10 +155,10 @@ Item {
                     height: editing ? 106 : 82
                     radius: 12
                     color: threadId === historyRoot.controller.currentThreadId
-                        ? "#292f35" : "#222222"
+                        ? AiChatTheme.raised : AiChatTheme.surface
                     border.width: 1
                     border.color: threadId === historyRoot.controller.currentThreadId
-                        ? Theme.blue : "#343434"
+                        ? AiChatTheme.accent : AiChatTheme.border
 
                     ColumnLayout {
                         anchors { fill: parent; margins: 12 }
@@ -173,9 +173,9 @@ Item {
                                 Layout.fillWidth: true
                                 visible: historyRow.editing
                                 text: historyRow.title
-                                color: "#f0f0f0"
-                                selectionColor: "#515151"
-                                selectedTextColor: "#ffffff"
+                                color: AiChatTheme.text
+                                selectionColor: AiChatTheme.selection
+                                selectedTextColor: AiChatTheme.selectedText
                                 font.family: Theme.fontFamily
                                 font.pixelSize: 13
                                 selectByMouse: true
@@ -205,7 +205,7 @@ Item {
                                 Layout.fillWidth: true
                                 visible: !historyRow.editing
                                 text: historyRow.title
-                                color: "#f0f0f0"
+                                color: AiChatTheme.text
                                 elide: Text.ElideRight
                                 font.family: Theme.fontFamily
                                 font.pixelSize: 13
@@ -217,7 +217,7 @@ Item {
                                     ? historyRoot.controller.historyOperation + "…"
                                     : historyRow.statusText
                                 color: historyRow.statusText === "Error"
-                                    ? Theme.red : "#8d8d8d"
+                                    ? AiChatTheme.error : AiChatTheme.mutedText
                                 font.family: Theme.fontFamily
                                 font.pixelSize: 11
                             }
@@ -230,7 +230,7 @@ Item {
                             Text {
                                 Layout.fillWidth: true
                                 text: historyRow.updatedText
-                                color: "#858585"
+                                color: AiChatTheme.mutedText
                                 font.family: Theme.fontFamily
                                 font.pixelSize: 11
                             }
@@ -278,7 +278,7 @@ Item {
                                 visible: !historyRow.editing
                                 label: historyRow.confirmingDelete
                                     ? "Confirm delete" : "Delete"
-                                labelColor: Theme.red
+                                labelColor: AiChatTheme.error
                                 enabled: !historyRoot.controller.historyBusy
                                 onClicked: {
                                     if (historyRow.confirmingDelete) {

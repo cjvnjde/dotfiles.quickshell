@@ -92,7 +92,7 @@ Item {
             + (role === "user" ? 28 : 0)
         anchors.right: role === "user" ? parent.right : undefined
         radius: role === "user" ? 18 : 0
-        color: role === "user" ? "#2a2a2a" : "transparent"
+        color: role === "user" ? AiChatTheme.userBackground : "transparent"
 
         ColumnLayout {
             id: messageContent
@@ -116,9 +116,9 @@ Item {
                 text: body
                 textFormat: Text.PlainText
                 wrapMode: Text.Wrap
-                color: role === "notice" ? "#b4b4b4" : "#eeeeee"
-                selectionColor: "#515151"
-                selectedTextColor: "#ffffff"
+                color: role === "notice" ? AiChatTheme.mutedText : AiChatTheme.text
+                selectionColor: AiChatTheme.selection
+                selectedTextColor: AiChatTheme.selectedText
                 font.family: Theme.fontFamily
                 font.pixelSize: 15
                 readOnly: true
@@ -132,8 +132,8 @@ Item {
                     && messageStatus === "streaming"
                     && activityTitle.length > 0
                 text: activityTitle
-                color: "#777777"
-                opacity: 0.58
+                color: AiChatTheme.mutedText
+                opacity: 1
                 font.family: Theme.fontFamily
                 font.pixelSize: 11
 
@@ -141,12 +141,12 @@ Item {
                     running: parent.visible
                     loops: Animation.Infinite
                     NumberAnimation {
-                        to: 0.3
+                        to: 0.8
                         duration: 700
                         easing.type: Easing.InOutSine
                     }
                     NumberAnimation {
-                        to: 0.58
+                        to: 1
                         duration: 700
                         easing.type: Easing.InOutSine
                     }
@@ -217,7 +217,7 @@ Item {
                                 for (const range of linkRanges) {
                                     linkStyling.selectionStart = range.start;
                                     linkStyling.selectionEnd = range.end;
-                                    linkStyling.color = "#8ab4f8";
+                                    linkStyling.color = AiChatTheme.accent;
                                     const linkFont = linkStyling.font;
                                     linkFont.underline = range.href === hoveredHref;
                                     linkStyling.font = linkFont;
@@ -233,9 +233,9 @@ Item {
                                 markdownBlock.text)
                             textFormat: Text.MarkdownText
                             wrapMode: Text.Wrap
-                            color: "#eeeeee"
-                            selectionColor: "#515151"
-                            selectedTextColor: "#ffffff"
+                            color: AiChatTheme.text
+                            selectionColor: AiChatTheme.selection
+                            selectedTextColor: AiChatTheme.selectedText
                             font.family: Theme.fontFamily
                             font.pixelSize: 15
                             readOnly: true
@@ -252,6 +252,14 @@ Item {
                             TextSelection {
                                 id: linkStyling
                                 document: assistantMarkdown.textDocument
+                            }
+
+                            Connections {
+                                target: AiChatTheme
+
+                                function onAccentChanged() {
+                                    linkStyleTimer.restart();
+                                }
                             }
 
                             Timer {
@@ -271,9 +279,9 @@ Item {
                                 ? codeLayout.implicitHeight + 20 : 0
                             visible: markdownBlock.kind === "code"
                             radius: 10
-                            color: "#111111"
+                            color: AiChatTheme.codeBackground
                             border.width: 1
-                            border.color: "#343434"
+                            border.color: AiChatTheme.border
 
                             Timer {
                                 id: codeCopyReset
@@ -297,7 +305,7 @@ Item {
                                     Layout.rightMargin: 38
                                     text: markdownBlock.language.length > 0
                                         ? markdownBlock.language : "code"
-                                    color: "#858585"
+                                    color: AiChatTheme.mutedText
                                     verticalAlignment: Text.AlignVCenter
                                     elide: Text.ElideRight
                                     font.family: Theme.fontFamily
@@ -310,9 +318,9 @@ Item {
                                     text: markdownBlock.text
                                     textFormat: Text.PlainText
                                     wrapMode: TextEdit.WrapAnywhere
-                                    color: "#d8d8d8"
-                                    selectionColor: "#515151"
-                                    selectedTextColor: "#ffffff"
+                                    color: AiChatTheme.text
+                                    selectionColor: AiChatTheme.selection
+                                    selectedTextColor: AiChatTheme.selectedText
                                     font.family: Theme.fontFamily
                                     font.pixelSize: 13
                                     readOnly: true
@@ -338,7 +346,7 @@ Item {
                                 z: 2
                                 radius: 8
                                 color: codeCopyMouse.containsMouse
-                                    ? "#2d2d2d" : "#1d1d1d"
+                                    ? AiChatTheme.hover : AiChatTheme.surface
 
                                 Behavior on opacity {
                                     NumberAnimation { duration: 100 }
@@ -357,7 +365,7 @@ Item {
                                         color: "transparent"
                                         border.width: 1
                                         border.color: codeBlock.copied
-                                            ? Theme.green : "#8b8b8b"
+                                            ? AiChatTheme.success : AiChatTheme.mutedText
                                     }
 
                                     Rectangle {
@@ -365,11 +373,10 @@ Item {
                                         width: 10
                                         height: 10
                                         radius: 1
-                                        color: codeCopyMouse.containsMouse
-                                            ? "#2d2d2d" : "#1d1d1d"
+                                        color: codeCopyButton.color
                                         border.width: 1
                                         border.color: codeBlock.copied
-                                            ? Theme.green : "#8b8b8b"
+                                            ? AiChatTheme.success : AiChatTheme.mutedText
                                     }
                                 }
 
@@ -404,7 +411,7 @@ Item {
                     : messageStatus === "sending" ? "Sending…" : messageStatus
                 color: messageStatus === "failed"
                     || errorText.length > 0
-                        ? Theme.red : "#777777"
+                        ? AiChatTheme.error : AiChatTheme.mutedText
                 font.family: Theme.fontFamily
                 font.pixelSize: 13
                 wrapMode: Text.Wrap
@@ -429,7 +436,8 @@ Item {
                 || answerCopyMouse.containsMouse ? 1 : 0
             z: 2
             radius: 8
-            color: answerCopyMouse.containsMouse ? "#2d2d2d" : "#1d1d1d"
+            color: answerCopyMouse.containsMouse
+                ? AiChatTheme.hover : AiChatTheme.surface
 
             Behavior on opacity {
                 NumberAnimation { duration: 100 }
@@ -447,7 +455,7 @@ Item {
                     radius: 1
                     color: "transparent"
                     border.width: 1
-                    border.color: answerCopied ? Theme.green : "#8b8b8b"
+                    border.color: answerCopied ? AiChatTheme.success : AiChatTheme.mutedText
                 }
 
                 Rectangle {
@@ -455,9 +463,9 @@ Item {
                     width: 10
                     height: 10
                     radius: 1
-                    color: answerCopyMouse.containsMouse ? "#2d2d2d" : "#1d1d1d"
+                    color: answerCopyButton.color
                     border.width: 1
-                    border.color: answerCopied ? Theme.green : "#8b8b8b"
+                    border.color: answerCopied ? AiChatTheme.success : AiChatTheme.mutedText
                 }
             }
 

@@ -11,8 +11,15 @@ Item {
         ? (controller.pinned ? 8 : 20) : 4
     readonly property bool framed: controller.conversationStarted
         || controller.pinned
+    readonly property bool themeCommandActive:
+        /^\/theme(?:\s|$)/i.test(commandPalette.draft.trim())
 
     function commandItems(draft) {
+        const themeItems = AiChatTheme.commandItems(draft);
+        if (themeItems !== null) {
+            return themeItems;
+        }
+
         return AiChatLogic.commandItems(draft, controller.availableModels,
             controller.selectedModel, controller.supportedEfforts,
             controller.selectedEffort, controller.presets, controller.pinned,
@@ -45,18 +52,19 @@ Item {
     }
 
     function submitComposer() {
-        if (controller.isGenerating) {
+        const activeCommand = AiChatLogic.commandDraft(composer.text);
+        const themeCommand = composerRoot.themeCommandActive;
+        if (!themeCommand && controller.isGenerating) {
             if (!controller.newChatPending) {
                 controller.stop();
             }
             return;
         }
-        if (controller.incompatibleActionRunning) {
+        if (!themeCommand && controller.incompatibleActionRunning) {
             return;
         }
 
         const draft = composer.text.trim();
-        const activeCommand = AiChatLogic.commandDraft(composer.text);
         if (activeCommand.length > 0) {
             const items = commandItems(activeCommand);
             for (const item of items) {
@@ -76,6 +84,9 @@ Item {
                 }
                 return;
             }
+        }
+        if (themeCommand) {
+            return;
         }
         if (controller.send(composer.text)) {
             composer.clear();
@@ -108,9 +119,9 @@ Item {
             visible: draft.length > 0
                 && composerRoot.commandItems(draft).length > 0
             radius: 29
-            color: "#242424"
+            color: AiChatTheme.surface
             border.width: 1
-            border.color: "#3c3c3c"
+            border.color: AiChatTheme.border
             clip: true
 
             ListView {
@@ -128,7 +139,7 @@ Item {
                     height: 46
                     radius: height / 2
                     color: index === commandList.currentIndex
-                        || commandMouse.containsMouse ? "#353535" : "transparent"
+                        || commandMouse.containsMouse ? AiChatTheme.hover : "transparent"
 
                     RowLayout {
                         anchors { fill: parent; leftMargin: 14; rightMargin: 14 }
@@ -136,7 +147,7 @@ Item {
 
                         Text {
                             text: modelData.label
-                            color: "#f0f0f0"
+                            color: AiChatTheme.text
                             font.family: Theme.fontFamily
                             font.pixelSize: 13
                             font.weight: Font.DemiBold
@@ -144,7 +155,7 @@ Item {
                         Text {
                             Layout.fillWidth: true
                             text: modelData.detail
-                            color: "#8a8a8a"
+                            color: AiChatTheme.mutedText
                             elide: Text.ElideRight
                             horizontalAlignment: Text.AlignRight
                             font.family: Theme.fontFamily
@@ -169,9 +180,9 @@ Item {
             Layout.preferredHeight: composerInner.implicitHeight
                 + (controller.pinned ? 16 : 24)
             radius: composerRoot.framed ? 22 : 28
-            color: composerRoot.framed ? "#272727" : "transparent"
+            color: composerRoot.framed ? AiChatTheme.surface : "transparent"
             border.width: composerRoot.framed ? 1 : 0
-            border.color: "#343434"
+            border.color: AiChatTheme.border
 
             ColumnLayout {
                 id: composerInner
@@ -238,9 +249,9 @@ Item {
                         TextEdit {
                             id: composer
                             width: parent.width
-                            color: "#eeeeee"
-                            selectionColor: "#515151"
-                            selectedTextColor: "#ffffff"
+                            color: AiChatTheme.text
+                            selectionColor: AiChatTheme.selection
+                            selectedTextColor: AiChatTheme.selectedText
                             wrapMode: TextEdit.Wrap
                             font.family: Theme.fontFamily
                             font.pixelSize: 15
@@ -254,7 +265,7 @@ Item {
                                 visible: composer.text.length === 0
                                 text: controller.conversationStarted
                                     ? "Message Codex" : "Ask Codex anything locally"
-                                color: "#707070"
+                                color: AiChatTheme.subtleText
                                 font: composer.font
                             }
 
@@ -314,9 +325,9 @@ Item {
                             height: 7
                             radius: 3.5
                             color: controller.maintenanceStatusVisible
-                                ? Theme.blue
+                                ? AiChatTheme.accent
                                 : controller.codexAuthorized
-                                    ? Theme.green : "#666666"
+                                    ? AiChatTheme.success : AiChatTheme.subtleText
                         }
 
                         Text {
@@ -325,9 +336,9 @@ Item {
                                 : controller.codexAuthorized
                                     ? "Authorized via sbx" : controller.statusText
                             color: controller.maintenanceStatusVisible
-                                ? Theme.blue
+                                ? AiChatTheme.accent
                                 : controller.codexAuthorized
-                                    ? "#a8b8a4" : "#858585"
+                                    ? AiChatTheme.success : AiChatTheme.mutedText
                             font.family: Theme.fontFamily
                             font.pixelSize: 11
                         }
@@ -345,7 +356,7 @@ Item {
                                         ? "  /retry  /discard" : "  /discard")
                                 : controller.lastError
                         color: controller.lastError.length > 0
-                            ? Theme.red : "#858585"
+                            ? AiChatTheme.error : AiChatTheme.mutedText
                         wrapMode: Text.Wrap
                         maximumLineCount: 2
                         elide: Text.ElideRight
@@ -358,13 +369,13 @@ Item {
                         visible: controller.canReconnect
                         radius: 8
                         color: reconnectMouse.containsMouse
-                            ? "#3a3a3a" : "#2c2c2c"
+                            ? AiChatTheme.hover : AiChatTheme.raised
 
                         Text {
                             id: reconnectText
                             anchors.centerIn: parent
                             text: "Reconnect"
-                            color: "#d8d8d8"
+                            color: AiChatTheme.text
                             font.family: Theme.fontFamily
                             font.pixelSize: 11
                             font.weight: Font.DemiBold
@@ -385,7 +396,7 @@ Item {
                             controller.selectedModelName,
                             controller.selectedEffort,
                             controller.activePresetName)
-                        color: "#d8d8d8"
+                        color: AiChatTheme.text
                         font.family: Theme.fontFamily
                         font.pixelSize: 12
                         font.weight: Font.Medium
@@ -393,11 +404,13 @@ Item {
 
                     AiChatActionButton {
                         stopMode: controller.isGenerating
-                        enabled: controller.isGenerating
-                            ? !controller.newChatPending
-                            : (!controller.incompatibleActionRunning
-                                && (composer.text.trim().length > 0
-                                    || controller.pendingAttachments.count > 0))
+                            && !composerRoot.themeCommandActive
+                        enabled: composerRoot.themeCommandActive
+                            || (controller.isGenerating
+                                ? !controller.newChatPending
+                                : (!controller.incompatibleActionRunning
+                                    && (composer.text.trim().length > 0
+                                        || controller.pendingAttachments.count > 0)))
                         onClicked: composerRoot.submitComposer()
                     }
                 }

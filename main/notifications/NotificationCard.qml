@@ -114,7 +114,7 @@ Rectangle {
                     implicitWidth: actionLabel.implicitWidth + 18
                     implicitHeight: 28
                     radius: 6
-                    color: actionMouse.containsMouse ? "#313244" : "#1e1e2e"
+                    color: actionMouse.containsMouse ? Theme.surface0 : Theme.base
                     border.width: 1
                     border.color: root.frameColor
 

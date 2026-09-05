@@ -1,4 +1,5 @@
 singleton KeyboardLayout 1.0 KeyboardLayout.qml
+ThemeControl 1.0 ThemeControl.qml
 TopBar 1.0 TopBar.qml
 SoundControl 1.0 SoundControl.qml
 BluetoothControl 1.0 BluetoothControl.qml

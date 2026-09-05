@@ -26,17 +26,17 @@ Scope {
         implicitWidth: buttonText.implicitWidth + 16
         implicitHeight: 30
         radius: 9
-        color: buttonMouse.containsMouse && enabled ? "#303030"
-            : selected ? "#292929" : "transparent"
+        color: buttonMouse.containsMouse && enabled ? AiChatTheme.hover
+            : selected ? AiChatTheme.raised : "transparent"
         border.width: selected ? 1 : 0
-        border.color: "#626262"
+        border.color: AiChatTheme.border
         opacity: enabled ? 1 : 0.35
 
         Text {
             id: buttonText
             anchors.centerIn: parent
             text: parent.label
-            color: parent.selected ? "#f2f2f2" : "#b8b8b8"
+            color: parent.selected ? AiChatTheme.text : AiChatTheme.mutedText
             font.family: Theme.fontFamily
             font.pixelSize: 11
             font.weight: Font.DemiBold
@@ -102,7 +102,7 @@ Scope {
         minimumSize: Qt.size(480, 360)
         title: view.controller.activeProjectName + " · "
             + view.controller.currentTitle
-        color: "#171717"
+        color: AiChatTheme.background
 
         onVisibleChanged: {
             if (visible) {
@@ -152,9 +152,9 @@ Scope {
                 : Math.min(Math.max(216, composerPanel.implicitHeight + 52)
                     + projectControls.implicitHeight, parent.height - 32)
         radius: windowed ? 0 : expanded ? 24 : 30
-        color: "#171717"
+        color: AiChatTheme.background
         border.width: windowed ? 0 : 1
-        border.color: "#3d3d3d"
+        border.color: AiChatTheme.border
         clip: true
 
         Behavior on height {
@@ -186,12 +186,12 @@ Scope {
                         leftMargin: header.controlInset
                     }
                     radius: 17
-                    color: closeMouse.containsMouse ? "#292929" : "transparent"
+                    color: closeMouse.containsMouse ? AiChatTheme.hover : "transparent"
 
                     Text {
                         anchors.centerIn: parent
                         text: "×"
-                        color: "#969696"
+                        color: AiChatTheme.mutedText
                         font.family: Theme.fontFamily
                         font.pixelSize: 23
                         font.weight: Font.Light
@@ -214,12 +214,13 @@ Scope {
                     }
                     radius: 17
                     color: pinMouse.containsMouse || view.controller.pinned
-                        ? "#292929" : "transparent"
+                        ? AiChatTheme.hover : "transparent"
 
                     Text {
                         anchors.centerIn: parent
                         text: view.controller.pinned ? "󰐃" : "󰤱"
-                        color: view.controller.pinned ? "#d5d5d5" : "#969696"
+                        color: view.controller.pinned
+                            ? AiChatTheme.text : AiChatTheme.mutedText
                         font.family: Theme.fontFamily
                         font.pixelSize: 17
                     }
@@ -239,7 +240,7 @@ Scope {
                         ? view.controller.activeProjectName + " conversations"
                         : view.controller.activeProjectName + " · "
                             + view.controller.currentTitle
-                    color: "#f2f2f2"
+                    color: AiChatTheme.text
                     elide: Text.ElideRight
                     horizontalAlignment: Text.AlignHCenter
                     font.family: Theme.fontFamily
@@ -286,7 +287,7 @@ Scope {
 
                 Text {
                     text: "New chat:"
-                    color: "#8f8f8f"
+                    color: AiChatTheme.mutedText
                     font.family: Theme.fontFamily
                     font.pixelSize: 11
                     font.weight: Font.DemiBold
@@ -469,7 +470,7 @@ Scope {
 
                     Text {
                         text: "Generated files"
-                        color: "#8f8f8f"
+                        color: AiChatTheme.mutedText
                         font.family: Theme.fontFamily
                         font.pixelSize: 11
                         font.weight: Font.DemiBold

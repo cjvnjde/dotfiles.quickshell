@@ -17,7 +17,7 @@ PanelWindow {
     }
 
     implicitHeight: Theme.barHeight
-    color: "#40313244"
+    color: Theme.dark ? Qt.alpha(Theme.surface0, 0.25) : Theme.base
 
     readonly property var persistentWorkspaceIds: [1, 2, 3, 4, 5]
     readonly property var hyprlandMonitor: {
@@ -198,6 +198,8 @@ PanelWindow {
         NetworkControl {}
 
         LanguageControl {}
+
+        ThemeControl {}
 
         AiChatControl {
             controller: root.aiController

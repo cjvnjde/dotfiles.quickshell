@@ -21,7 +21,7 @@ Rectangle {
             && (pending || hostPath.length > 0)
         ? (pending ? 68 : 150) : 48
     radius: pending ? 10 : 12
-    color: pending ? "#1c1c1c" : "#202020"
+    color: pending ? AiChatTheme.background : AiChatTheme.surface
     clip: true
 
     Image {
@@ -50,12 +50,12 @@ Rectangle {
             Layout.preferredWidth: 28
             Layout.preferredHeight: 28
             radius: 7
-            color: "#343434"
+            color: AiChatTheme.raised
 
             Text {
                 anchors.centerIn: parent
                 text: attachment.attachmentKind === "image" ? "IMG" : "TXT"
-                color: "#cfcfcf"
+                color: AiChatTheme.text
                 font.family: Theme.fontFamily
                 font.pixelSize: 8
                 font.weight: Font.DemiBold
@@ -65,7 +65,7 @@ Rectangle {
         Text {
             Layout.fillWidth: true
             text: attachment.displayName
-            color: "#dedede"
+            color: AiChatTheme.text
             elide: Text.ElideMiddle
             font.family: Theme.fontFamily
             font.pixelSize: 11
@@ -78,12 +78,12 @@ Rectangle {
         anchors { top: parent.top; right: parent.right; margins: 4 }
         visible: attachment.pending
         radius: 12
-        color: "#d8d8d8"
+        color: AiChatTheme.action
 
         Text {
             anchors.centerIn: parent
             text: "×"
-            color: "#171717"
+            color: AiChatTheme.actionText
             font.pixelSize: 17
         }
 

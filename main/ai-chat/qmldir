@@ -1,3 +1,4 @@
+singleton AiChatTheme 1.0 AiChatTheme.qml
 singleton AiConfig 1.0 AiConfig.qml
 CodexAppServer 1.0 CodexAppServer.qml
 AiSandboxSetup 1.0 AiSandboxSetup.qml

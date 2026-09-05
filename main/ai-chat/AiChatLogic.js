@@ -42,6 +42,12 @@ const COMMAND_CATALOG = [
         immediate: true
     },
     {
+        label: "/theme",
+        detail: "Choose a theme and light or dark mode",
+        draft: "/theme ",
+        immediate: false
+    },
+    {
         label: "/model",
         detail: "Change model",
         draft: "/model ",

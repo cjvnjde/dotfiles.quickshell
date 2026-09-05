@@ -1,2 +1,3 @@
+singleton SystemTheme 1.0 SystemTheme.qml
 singleton Theme 1.0 Theme.qml
 AppLauncher 1.0 AppLauncher.qml

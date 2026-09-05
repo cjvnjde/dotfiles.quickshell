@@ -1,7 +1,7 @@
 # Quickshell Catppuccin shell
 
-A compositor-neutral Quickshell setup with a Catppuccin Mocha top bar and a
-freedesktop notification daemon.
+A Quickshell setup with Catppuccin Mocha (dark) and Latte (light) appearance,
+a top bar, and a freedesktop notification daemon.
 
 ## Run
 
@@ -24,7 +24,33 @@ They support application actions, and critical notifications remain visible unti
 - `notifications/` contains the notification daemon and cards.
 - `ai-chat/` contains the AI chat UI, controller, helpers, tests, and chat kit.
 - `notes/` contains persistent note cards and pinned note windows.
-- `AppLauncher.qml` and `Theme.qml` remain shared at the configuration root.
+- `AppLauncher.qml`, `Theme.qml`, and `SystemTheme.qml` are shared at the
+  configuration root.
+
+## Appearance
+
+Click the **sun/moon icon** in the top bar to switch the desktop appearance.
+The shared mode is stored in `org.gnome.desktop.interface color-scheme`:
+`prefer-dark` selects Catppuccin Mocha; `prefer-light` selects Catppuccin Latte.
+The system's `default` value is treated as light. Changes made with `gsettings`
+also update the shell immediately.
+
+The mode covers the bar, popups, launcher, notes, notifications, and chat.
+With this repository's Hyprland configuration, it also updates window borders,
+shadows, group bars, and compositor background colors. Quickshell reapplies the
+selected mode after Hyprland configuration reloads. Wallpaper images are unchanged.
+Ghostty's configuration selects Latte/Mocha automatically through the desktop
+appearance portal; applications drawing their own terminal colors remain in
+control of those colors.
+
+The Hyprland setup installs `hyprland-session.target` and activates it on login
+so the desktop portal can publish appearance changes. This requires
+`xdg-desktop-portal-gtk` alongside `xdg-desktop-portal-hyprland`. Ghostty processes
+started while the portal was unavailable need one full restart after the session
+dependency is fixed. Opening another window with `Super+Return` reuses the old
+Ghostty process, so close all Ghostty windows before reopening it. To keep
+existing sessions open, `ghostty --gtk-single-instance=false` opens an independent
+process that can receive appearance changes immediately.
 
 ## Launcher
 
@@ -86,11 +112,11 @@ chat, even when that project is already active. Add `Shift` to any of these
 shortcuts to select a screen region first and attach its untouched PNG to the
 corresponding chat. Screenshot selection does not wait for sandbox startup;
 copying the image waits until the selected sandbox is available.
-The interface is a minimal dark composer that expands into the current
+The interface is a themed composer that expands into the current
 conversation. Its header opens persisted conversation history and exports the
 loaded conversation as Markdown. All assistant output from one turn renders as
-one Markdown response. Web and email links open externally, use a brighter
-browser-style blue, and underline only while hovered. An icon-only whole-answer
+one Markdown response. Web and email links open externally, use the palette's
+accent color, and underline only while hovered. An icon-only whole-answer
 copy action appears while a completed answer is hovered, and fenced code renders
 in separate blocks with its own copy icons. While Codex is reasoning or using a
 tool, a small muted animated text label shows the current work and disappears
@@ -137,6 +163,38 @@ a message. `Shift+Enter` inserts a newline, and `Escape` hides the overlay
 without stopping an active response. A turn completed while visible sends no
 notification. A turn completed while hidden sends one privacy-safe desktop
 notification whose Open action restores the focused-screen chat and composer.
+
+### Chat themes
+
+Type `/theme` to choose a theme family and mode. Both built-in themes offer
+light and dark variants:
+
+```text
+/theme catppuccin light
+/theme catppuccin dark
+/theme default light
+/theme default dark
+```
+
+Catppuccin uses Latte/Mocha backgrounds with contrast-adjusted text and accents.
+Default retains the neutral chat style and adds a light palette. Catppuccin is
+the initial family; the chosen family persists in `ai-chat-theme.json` in the
+shell's state directory. The mode is shared with the desktop: selecting a mode
+through `/theme` also changes the system setting, shell, and Hyprland, while the
+top-bar toggle keeps the selected chat family.
+
+The picker filters theme names and modes, marks the current selection, and uses
+the same arrow-key, Tab, Enter, and mouse controls as other commands. `/theme`
+can be used while the backend is busy or generating without sending a message
+or stopping the response. Inline selection preserves the rest of the draft.
+
+To add another chat theme, copy an entry in
+[`ai-chat/AiThemes.json`](ai-chat/AiThemes.json), choose a unique lowercase `id`
+without spaces and a display `label`, and provide both `light` and `dark`
+objects with the same color keys. Reload Quickshell to load the catalog. The
+new family appears in `/theme` without changing QML or command code.
+
+### Model presets
 
 Define presets in
 [`ai-chat/AiPresets.json`](ai-chat/AiPresets.json) using model IDs and thinking
@@ -387,6 +445,8 @@ Quickshell load arbitrary host files or remote image URLs. Only `http`,
 - Language: click the current two-letter language code to list and select any
   keyboard layout configured in Hyprland. The indicator updates immediately
   when the layout changes.
+- Appearance: the **sun/moon icon** switches the shared desktop mode between
+  Catppuccin Latte and Mocha. The icon shows the current mode; hover it for the next mode or a command error.
 - AI: shows sandbox and Codex connection progress, then the remaining weekly
   subscription allowance when the sandbox exposes it. Click it to open chat.
 - Notes: click the note icon to open the anchored, editable card grid. Its

@@ -428,7 +428,8 @@ Scope {
         const argument = pieces.slice(1).join(" ");
         const requiresArgument = command === "/model"
             || command === "/thinking" || command === "/effort"
-            || command === "/preset" || command === "/project";
+            || command === "/preset" || command === "/project"
+            || command === "/theme";
         if (requiresArgument && argument.length === 0) {
             return false;
         }
@@ -454,6 +455,10 @@ Scope {
             break;
         case "/unpin":
             setPinned(false);
+            break;
+        case "/theme":
+            lastError = AiChatTheme.select(argument) ? ""
+                : AiChatTheme.selectionError;
             break;
         case "/model":
             chooseModel(argument);
