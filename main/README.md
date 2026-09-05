@@ -1,7 +1,7 @@
 # Quickshell Catppuccin shell
 
 A Quickshell setup with Catppuccin Mocha (dark) and Latte (light) appearance,
-a top bar, and a freedesktop notification daemon.
+a top bar, theme-aware wallpapers, and a freedesktop notification daemon.
 
 ## Run
 
@@ -24,6 +24,7 @@ They support application actions, and critical notifications remain visible unti
 - `notifications/` contains the notification daemon and cards.
 - `ai-chat/` contains the AI chat UI, controller, helpers, tests, and chat kit.
 - `notes/` contains persistent note cards and pinned note windows.
+- `Wallpaper.qml` renders a persistent background window on each display.
 - `AppLauncher.qml`, `Theme.qml`, and `SystemTheme.qml` are shared at the
   configuration root.
 
@@ -38,10 +39,17 @@ also update the shell immediately.
 The mode covers the bar, popups, launcher, notes, notifications, and chat.
 With this repository's Hyprland configuration, it also updates window borders,
 shadows, group bars, and compositor background colors. Quickshell reapplies the
-selected mode after Hyprland configuration reloads. Wallpaper images are unchanged.
+selected mode after Hyprland configuration reloads.
 The topbar background stays at its original roughly 25% opacity in both modes;
 only its controls and foreground colors follow the selected palette.
 Terminal and Zsh colors remain independent of the desktop appearance setting.
+
+Wallpapers use `${XDG_CONFIG_HOME:-$HOME/.config}/hypr/assets/bg_light.png`
+in light mode and `bg_dark.jpg` in dark mode, scaled to cover each display.
+The background window stays alive when the theme changes. Qt Quick loads the
+new image asynchronously and retains the old image until the replacement is
+ready, avoiding a flash of the compositor's default background. Wallpapers
+require the Hyprland assets and remain visible only while Quickshell is running.
 
 ## Launcher
 
