@@ -203,7 +203,7 @@ Item {
                     Layout.fillWidth: true
                     Layout.preferredHeight: Math.max(
                         controller.conversationStarted ? 72 : 88,
-                        Math.min(144, composer.contentHeight + 32))
+                        Math.min(144, composer.contentHeight + 8))
 
                     Flickable {
                         id: composerViewport
