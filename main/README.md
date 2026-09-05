@@ -80,8 +80,12 @@ allowance through the active sandbox and its credential proxy. It shows `Ready`
 when the proxy does not expose subscription limits. Click the control to open
 the chat.
 
-Press `Super+A` to open a compact AI chat overlay, or `Super+Shift+A` to select
-a screen region and attach its untouched PNG to a new prompt.
+Press `Super+A` to open the current AI chat without resetting its conversation
+or draft. `Super+E` starts a new `general` chat; `Super+O` starts a new English
+chat, even when that project is already active. Add `Shift` to any of these
+shortcuts to select a screen region first and attach its untouched PNG to the
+corresponding chat. Screenshot selection does not wait for sandbox startup;
+copying the image waits until the selected sandbox is available.
 The interface is a minimal dark composer that expands into the current
 conversation. Its header opens persisted conversation history and exports the
 loaded conversation as Markdown. All assistant output from one turn renders as
@@ -110,8 +114,14 @@ into a managed
 window; `/unpin` appears there instead and returns it to the popup. `/model`
 changes the active model, `/thinking` changes reasoning effort, and
 `/preset NAME` applies a configured model-and-thinking pair. `/project NAME`
-switches to a separately isolated AI project; typing `/project` lists and
-filters configured projects. The selected project, model, and thinking level
+starts a new chat in a separately isolated AI project; typing `/project` lists
+and filters configured projects. The **New chat:** buttons below the header
+provide one-click access to every configured project, including the active one.
+Project opens interrupt an active response and wait for other busy operations
+before clearing the loaded conversation, draft, and unsent attachments.
+If several project opens arrive while busy, the latest selection wins.
+Previous saved threads remain in their project's History; switching back does
+not automatically resume them. The selected project, model, and thinking level
 persist across shell restarts. `/new` starts a clean chat inside the active
 project without deleting the previous thread or its generated files.
 `/reconnect` reloads the project catalog, active configuration, and app-server.
@@ -279,6 +289,8 @@ qs -c main ipc call ai open
 qs -c main ipc call ai openProject general
 qs -c main ipc call ai openProject english
 qs -c main ipc call ai openProject jira
+qs -c main ipc call ai screenshotProject general
+qs -c main ipc call ai screenshotProject english
 qs -c main ipc call ai close
 qs -c main ipc call ai pin
 qs -c main ipc call ai unpin
@@ -291,9 +303,12 @@ qs -c main ipc call ai exportChat
 Project IPC is intended for compositor keybinds. For example:
 
 ```ini
-bind = SUPER, A, exec, qs -c main ipc call ai openProject general
-bind = SUPER, E, exec, qs -c main ipc call ai openProject english
-bind = SUPER, J, exec, qs -c main ipc call ai openProject jira
+bind = SUPER, A, exec, qs -c main ipc call ai open
+bind = SUPER, E, exec, qs -c main ipc call ai openProject general
+bind = SUPER, O, exec, qs -c main ipc call ai openProject english
+bind = SUPER SHIFT, A, exec, qs -c main ipc call ai screenshot
+bind = SUPER SHIFT, E, exec, qs -c main ipc call ai screenshotProject general
+bind = SUPER SHIFT, O, exec, qs -c main ipc call ai screenshotProject english
 ```
 
 The export and artifact helpers return completion, cancellation, and failure

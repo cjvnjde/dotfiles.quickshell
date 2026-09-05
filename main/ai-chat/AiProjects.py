@@ -8,7 +8,7 @@ from pathlib import Path
 PROJECT_ID_PATTERN = re.compile(r"^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$")
 GENERAL_PROJECT = {
     "id": "general",
-    "label": "General",
+    "label": "general",
     "description": "General AI chat",
 }
 

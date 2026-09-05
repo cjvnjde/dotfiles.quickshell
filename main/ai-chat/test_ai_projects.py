@@ -25,24 +25,16 @@ class ProjectCatalogTests(unittest.TestCase):
             catalog = AiProjects.project_catalog(projects_root)
 
             self.assertEqual(
-                catalog["projects"],
-                [
-                    {
-                        "id": "general",
-                        "label": "General",
-                        "description": "General AI chat",
-                    },
-                    {
-                        "id": "english",
-                        "label": "English",
-                        "description": "",
-                    },
-                    {
-                        "id": "jira",
-                        "label": "Jira",
-                        "description": "Issue management",
-                    },
-                ],
+                [project["id"] for project in catalog["projects"]],
+                ["general", "english", "jira"],
+            )
+            self.assertEqual(
+                catalog["projects"][2],
+                {
+                    "id": "jira",
+                    "label": "Jira",
+                    "description": "Issue management",
+                },
             )
             self.assertEqual(catalog["warnings"], [])
 

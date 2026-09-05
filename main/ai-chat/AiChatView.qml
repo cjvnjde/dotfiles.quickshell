@@ -20,19 +20,23 @@ Scope {
 
     component HeaderButton: Rectangle {
         property string label: ""
+        property bool selected: false
         signal clicked()
 
         implicitWidth: buttonText.implicitWidth + 16
         implicitHeight: 30
         radius: 9
-        color: buttonMouse.containsMouse && enabled ? "#303030" : "transparent"
+        color: buttonMouse.containsMouse && enabled ? "#303030"
+            : selected ? "#292929" : "transparent"
+        border.width: selected ? 1 : 0
+        border.color: "#626262"
         opacity: enabled ? 1 : 0.35
 
         Text {
             id: buttonText
             anchors.centerIn: parent
             text: parent.label
-            color: "#b8b8b8"
+            color: parent.selected ? "#f2f2f2" : "#b8b8b8"
             font.family: Theme.fontFamily
             font.pixelSize: 11
             font.weight: Font.DemiBold
@@ -123,6 +127,9 @@ Scope {
         function onFocusComposer() {
             view.focusComposer();
         }
+        function onConversationGenerationChanged() {
+            composerPanel.clearDraft();
+        }
     }
 
     Rectangle {
@@ -142,8 +149,8 @@ Scope {
             ? parent.height
             : expanded
                 ? Math.min(AiConfig.chatMaxHeight, parent.height * 0.86)
-                : Math.min(Math.max(216, composerPanel.implicitHeight + 52),
-                    parent.height - 32)
+                : Math.min(Math.max(216, composerPanel.implicitHeight + 52)
+                    + projectControls.implicitHeight, parent.height - 32)
         radius: windowed ? 0 : expanded ? 24 : 30
         color: "#171717"
         border.width: windowed ? 0 : 1
@@ -263,6 +270,62 @@ Scope {
                         enabled: view.controller.canExport
                             && !view.controller.historyVisible
                         onClicked: view.controller.exportConversation()
+                    }
+                }
+            }
+
+            RowLayout {
+                id: projectControls
+                implicitHeight: 38
+                Layout.fillWidth: true
+                Layout.minimumHeight: implicitHeight
+                Layout.preferredHeight: implicitHeight
+                Layout.leftMargin: 20
+                Layout.rightMargin: 20
+                spacing: 8
+
+                Text {
+                    text: "New chat:"
+                    color: "#8f8f8f"
+                    font.family: Theme.fontFamily
+                    font.pixelSize: 11
+                    font.weight: Font.DemiBold
+                }
+
+                ListView {
+                    id: projectList
+                    Layout.fillWidth: true
+                    Layout.preferredHeight: 30
+                    model: view.controller.projects
+                    orientation: ListView.Horizontal
+                    spacing: 4
+                    clip: true
+                    boundsBehavior: Flickable.StopAtBounds
+
+                    delegate: HeaderButton {
+                        required property var modelData
+                        label: String(modelData.label || modelData.id)
+                        selected: modelData.id === view.controller.activeProjectId
+                        onClicked: view.controller.openProject(modelData.id)
+                    }
+
+                    WheelHandler {
+                        target: null
+                        acceptedDevices: PointerDevice.Mouse
+                            | PointerDevice.TouchPad
+                        onWheel: event => {
+                            const preciseDelta = event.pixelDelta.x
+                                || event.pixelDelta.y;
+                            const distance = preciseDelta !== 0
+                                ? preciseDelta
+                                : (event.angleDelta.x || event.angleDelta.y) / 120 * 60;
+                            const minimum = projectList.originX;
+                            const maximum = minimum + Math.max(0,
+                                projectList.contentWidth - projectList.width);
+                            projectList.contentX = Math.max(minimum, Math.min(
+                                maximum, projectList.contentX - distance));
+                            event.accepted = true;
+                        }
                     }
                 }
             }

@@ -24,16 +24,17 @@ Scope {
     property string selectedEffort: chatPreferences.selectedEffort
     property var projects: [{
         id: "general",
-        label: "General",
+        label: "general",
         description: "General AI chat"
     }]
     property bool projectCatalogLoading: true
     property string activeProjectId: chatPreferences.activeProjectId || "general"
     property string pendingProjectId: ""
+    property bool pendingProjectScreenshot: false
     readonly property var activeProject: AiChatLogic.projectById(
         projects, activeProjectId)
     readonly property string activeProjectName: activeProject === null
-        ? "General" : String(activeProject.label || activeProject.id)
+        ? "general" : String(activeProject.label || activeProject.id)
     readonly property string activeSandboxName:
         AiConfig.sandboxNameForProject(activeProjectId)
     readonly property string activeSandboxWorkspace:
@@ -70,7 +71,6 @@ Scope {
         ? "" : activeSandboxSetup.state
     readonly property bool sandboxSetupRunning: activeSandboxSetup !== null
         && activeSandboxSetup.running
-    property bool captureRequested: false
     property int conversationGeneration: 0
     property string currentTitle: "New conversation"
     property string persistedThreadName: ""
@@ -122,7 +122,9 @@ Scope {
     readonly property alias pendingAttachments: attachmentModel
     readonly property alias historyThreads: historyModel
     readonly property alias artifacts: artifactModel
-    readonly property bool attachmentsBusy: screenshot.state === "preparing"
+    readonly property bool attachmentsBusy: captureDelay.running
+        || screenshot.state === "waiting-for-sandbox"
+        || screenshot.state === "preparing"
         || screenshot.state === "selecting"
         || screenshot.state === "importing"
         || screenshot.state === "validating"
@@ -134,6 +136,7 @@ Scope {
         || submissionStarting || isGenerating || newChatPending
         || pendingResumedSettings !== null || sandboxSetupRunning
         || projectCatalogLoading || modelCatalogLoading
+        || connectionState === "connecting" || connectionState === "initializing"
         || syncingChatKit || codexUpdating || rebuildingSandbox
         || historyBusy || exportBusy || artifactSaveBusy || artifactDeleteBusy
         || prepareThreadOutputs.running || outputIndex.running
@@ -150,6 +153,12 @@ Scope {
         && !incompatibleActionRunning
     readonly property string attachmentState: screenshot.state
     readonly property string attachmentFailureStage: screenshot.failureStage
+
+    onIncompatibleActionRunningChanged: {
+        if (!incompatibleActionRunning) {
+            Qt.callLater(() => processPendingProject());
+        }
+    }
 
     signal focusComposer()
     signal threadRenameSucceeded(string threadId)
@@ -215,43 +224,66 @@ Scope {
         return "Disconnected";
     }
 
-    function openProject(projectId) {
-        if (projectCatalogLoading) {
-            pendingProjectId = String(projectId || "");
+    function openProject(projectId, options) {
+        const requestedProjectId = String(projectId || "");
+        if (!projectCatalogLoading
+                && AiChatLogic.projectById(projects, requestedProjectId) === null) {
             shown = true;
-            return true;
-        }
-        const project = AiChatLogic.projectById(projects, projectId);
-        shown = true;
-        if (project === null) {
             lastError = "Unknown project. Type /project to see configured projects.";
             Qt.callLater(() => focusComposer());
             return false;
         }
-        if (project.id === activeProjectId) {
-            open();
-            return true;
+        pendingProjectId = requestedProjectId;
+        pendingProjectScreenshot = options !== undefined && options.screenshot === true;
+        if (!pendingProjectScreenshot) {
+            shown = true;
         }
-        if (maintenanceBlocked()) {
-            lastError = "Wait for the current chat operation to finish before switching projects.";
-            Qt.callLater(() => focusComposer());
-            return false;
+        if (isGenerating && !newChatPending) {
+            newChat();
+        }
+        processPendingProject();
+        return true;
+    }
+
+    function processPendingProject() {
+        if (pendingProjectId.length === 0 || incompatibleActionRunning) {
+            return;
+        }
+        const project = AiChatLogic.projectById(projects, pendingProjectId);
+        const withScreenshot = pendingProjectScreenshot;
+        pendingProjectId = "";
+        pendingProjectScreenshot = false;
+        if (project === null) {
+            shown = true;
+            lastError = "Unknown project. Type /project to see configured projects.";
+            return;
         }
 
-        transport.stop();
-        clearConversationForRebuild();
-        resolvedSandboxName = "";
-        codexAuthorized = false;
-        weeklyLimitRemainingPercent = -1;
-        weeklyLimitLoading = true;
-        weeklyLimitError = "";
-        rebuildConfirmationPending = false;
-        rebuildConfirmationTimer.stop();
-        activeProjectId = project.id;
+        if (project.id === activeProjectId) {
+            finishNewChat();
+        } else {
+            transport.stop();
+            clearConversationForRebuild();
+            rateLimitReader.running = false;
+            resolvedSandboxName = "";
+            codexAuthorized = false;
+            weeklyLimitRemainingPercent = -1;
+            weeklyLimitLoading = true;
+            weeklyLimitError = "";
+            rebuildConfirmationPending = false;
+            rebuildConfirmationTimer.stop();
+            activeProjectId = project.id;
+        }
         lastError = "";
-        startBackend();
-        Qt.callLater(() => focusComposer());
-        return true;
+        if (withScreenshot) {
+            captureRegion();
+        } else {
+            shown = true;
+            if (connectionState === "disconnected") {
+                startBackend();
+            }
+            Qt.callLater(() => focusComposer());
+        }
     }
 
     function refreshRateLimits() {
@@ -708,7 +740,13 @@ Scope {
     }
 
     function failSandboxSetup(message) {
-        captureRequested = false;
+        if (captureDelay.running || screenshot.state === "selecting"
+                || screenshot.state === "validating"
+                || screenshot.state === "waiting-for-sandbox") {
+            captureDelay.stop();
+            screenshot.discard();
+            shown = true;
+        }
         rebuildRequested = false;
         codexUpdateRequested = false;
         pendingMaintenanceNotice = "";
@@ -800,9 +838,6 @@ Scope {
             beginSandboxRemoval();
             return;
         }
-        if (captureRequested) {
-            beginCapture();
-        }
         continueBackendStartup();
     }
 
@@ -888,7 +923,6 @@ Scope {
         queuedSubmission = null;
         submissionStarting = false;
         isGenerating = false;
-        captureRequested = false;
         pendingRequests = {};
         historyVisible = false;
         historyLoading = false;
@@ -1434,16 +1468,13 @@ Scope {
         if (attachmentsBusy) {
             return;
         }
-        if (resolvedSandboxName.length === 0) {
-            captureRequested = true;
-            startBackend();
-            return;
-        }
         beginCapture();
+        if (resolvedSandboxName.length === 0) {
+            startBackend();
+        }
     }
 
     function beginCapture() {
-        captureRequested = false;
         shown = false;
         captureDelay.restart();
     }
@@ -1469,7 +1500,6 @@ Scope {
             overloadRetry.stop();
             overloadRetry.pending = null;
         }
-        captureRequested = false;
         historyVisible = false;
         clearLoadedConversation();
         lastError = "";
@@ -2191,10 +2221,8 @@ Scope {
                 root.activeProjectId = "general";
             }
             root.releaseRemovedSandboxes();
-            const requestedProjectId = root.pendingProjectId;
-            root.pendingProjectId = "";
-            if (requestedProjectId.length > 0
-                    && root.openProject(requestedProjectId)) {
+            if (root.pendingProjectId.length > 0) {
+                root.processPendingProject();
                 return;
             }
             if (AiConfig.backendAutoStart) {
@@ -2706,6 +2734,9 @@ Scope {
         function open(): void { root.open(); }
         function openProject(projectId: string): void {
             root.openProject(projectId);
+        }
+        function screenshotProject(projectId: string): void {
+            root.openProject(projectId, { screenshot: true });
         }
         function close(): void { root.close(); }
         function pin(): void { root.setPinned(true); root.open(); }

@@ -12,6 +12,7 @@ Scope {
     property string token: ""
     property string hostPath: ""
     property string sandboxPath: ""
+    property string copySandboxName: ""
     property string failureStage: ""
     property bool startupCleanupComplete: false
     property bool captureAfterCleanup: false
@@ -69,6 +70,7 @@ Scope {
         token = "";
         hostPath = "";
         sandboxPath = "";
+        copySandboxName = "";
         failureStage = "";
         sourceKind = "";
         attachmentKind = "";
@@ -76,17 +78,25 @@ Scope {
     }
 
     function capture() {
-        if (!startupCleanupComplete) {
-            captureAfterCleanup = true;
-            return;
-        }
         if (state !== "idle" && state !== "ready") {
             return;
         }
 
+        pendingImport = null;
         resetOperation();
         lastError = "";
         state = "selecting";
+        if (!startupCleanupComplete) {
+            captureAfterCleanup = true;
+            return;
+        }
+        selectRegion();
+    }
+
+    function selectRegion() {
+        if (state !== "selecting") {
+            return;
+        }
         Quickshell.execDetached({
             command: ["bash", Quickshell.shellPath("ai-chat/AiCaptureRegion.sh")]
         });
@@ -181,10 +191,17 @@ Scope {
     }
 
     function beginCopy() {
+        if (state !== "waiting-for-sandbox" || sandboxName.length === 0) {
+            return;
+        }
+        copySandboxName = sandboxName;
         state = "copying";
         captured(token, hostPath, sandboxPath, attachmentKind, displayName);
+        if (state !== "copying") {
+            return;
+        }
         prepareSandbox.command = AiConfig.sbxCommand.concat([
-            "exec", sandboxName, "mkdir", "-p", "-m", "700",
+            "exec", copySandboxName, "mkdir", "-p", "-m", "700",
             AiConfig.sandboxAttachmentDirectory
         ]);
         prepareSandbox.running = true;
@@ -194,6 +211,7 @@ Scope {
         if (state !== "selecting") {
             return;
         }
+        captureAfterCleanup = false;
         resetOperation();
         state = "idle";
         cancelled();
@@ -241,11 +259,19 @@ Scope {
     function discard() {
         const discardedHostPath = hostPath;
         const discardedSandboxPath = sandboxPath;
+        const discardedSandboxName = copySandboxName;
+        captureAfterCleanup = false;
+        pendingImport = null;
         resetOperation();
         state = "idle";
+        validateCapture.running = false;
+        prepareSandbox.running = false;
+        copyToSandbox.running = false;
         lastError = "";
         removeHostFile(discardedHostPath);
-        removeSandboxFile(discardedSandboxPath);
+        if (discardedSandboxName.length > 0) {
+            removeSandboxFile(discardedSandboxPath, discardedSandboxName);
+        }
     }
 
     function removeHostFile(path) {
@@ -255,13 +281,13 @@ Scope {
         Quickshell.execDetached({ command: ["rm", "-f", "--", path] });
     }
 
-    function removeSandboxFile(path) {
-        if (sandboxName.length === 0 || managedSandboxFilename(path).length === 0) {
+    function removeSandboxFile(path, targetSandboxName = sandboxName) {
+        if (targetSandboxName.length === 0 || managedSandboxFilename(path).length === 0) {
             return;
         }
         Quickshell.execDetached({
             command: AiConfig.sbxCommand.concat([
-                "exec", root.sandboxName, "rm", "-f", "--", path
+                "exec", targetSandboxName, "rm", "-f", "--", path
             ])
         });
     }
@@ -271,6 +297,9 @@ Scope {
         stdout: StdioCollector { id: validatedCaptureOutput }
         stderr: StdioCollector {}
         onExited: function(exitCode) {
+            if (root.state !== "validating") {
+                return;
+            }
             const mime = validatedCaptureOutput.text.trim();
             const mimeType = mime.split(";")[0].trim();
             const charsetMatch = mime.match(/charset=([^;\s]+)/);
@@ -286,6 +315,7 @@ Scope {
                     root.sourceKind === "screenshot" ? "capture" : "attachment");
                 return;
             }
+            root.state = "waiting-for-sandbox";
             root.beginCopy();
         }
     }
@@ -295,13 +325,16 @@ Scope {
         stdout: StdioCollector {}
         stderr: StdioCollector { id: prepareSandboxError }
         onExited: function(exitCode) {
+            if (root.state !== "copying") {
+                return;
+            }
             if (exitCode !== 0) {
                 root.fail("Could not prepare the sandbox attachment directory: "
                     + prepareSandboxError.text.trim().slice(0, 160), "copy");
                 return;
             }
             copyToSandbox.command = AiConfig.sbxCommand.concat([
-                "cp", root.hostPath, root.sandboxName + ":" + root.sandboxPath
+                "cp", root.hostPath, root.copySandboxName + ":" + root.sandboxPath
             ]);
             copyToSandbox.running = true;
         }
@@ -312,6 +345,9 @@ Scope {
         stdout: StdioCollector {}
         stderr: StdioCollector { id: copyError }
         onExited: function(exitCode) {
+            if (root.state !== "copying") {
+                return;
+            }
             if (exitCode !== 0) {
                 root.fail("sbx cp failed: " + copyError.text.trim().slice(0, 180), "copy");
                 return;
@@ -331,7 +367,7 @@ Scope {
             root.startupCleanupComplete = true;
             if (root.captureAfterCleanup) {
                 root.captureAfterCleanup = false;
-                root.capture();
+                root.selectRegion();
             } else {
                 root.startPendingImport();
             }
@@ -355,6 +391,9 @@ Scope {
         cleanupAbandonedHostFiles.running = true;
     }
 
-    onSandboxNameChanged: startPendingImport()
+    onSandboxNameChanged: {
+        beginCopy();
+        startPendingImport();
+    }
 
 }
