@@ -17,7 +17,7 @@ PanelWindow {
     }
 
     implicitHeight: Theme.barHeight
-    color: Theme.dark ? Qt.alpha(Theme.surface0, 0.25) : Theme.base
+    color: "#40313244"
 
     readonly property var persistentWorkspaceIds: [1, 2, 3, 4, 5]
     readonly property var hyprlandMonitor: {

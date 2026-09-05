@@ -39,18 +39,9 @@ The mode covers the bar, popups, launcher, notes, notifications, and chat.
 With this repository's Hyprland configuration, it also updates window borders,
 shadows, group bars, and compositor background colors. Quickshell reapplies the
 selected mode after Hyprland configuration reloads. Wallpaper images are unchanged.
-Ghostty's configuration selects Latte/Mocha automatically through the desktop
-appearance portal; applications drawing their own terminal colors remain in
-control of those colors.
-
-The Hyprland setup installs `hyprland-session.target` and activates it on login
-so the desktop portal can publish appearance changes. This requires
-`xdg-desktop-portal-gtk` alongside `xdg-desktop-portal-hyprland`. Ghostty processes
-started while the portal was unavailable need one full restart after the session
-dependency is fixed. Opening another window with `Super+Return` reuses the old
-Ghostty process, so close all Ghostty windows before reopening it. To keep
-existing sessions open, `ghostty --gtk-single-instance=false` opens an independent
-process that can receive appearance changes immediately.
+The topbar background stays at its original roughly 25% opacity in both modes;
+only its controls and foreground colors follow the selected palette.
+Terminal and Zsh colors remain independent of the desktop appearance setting.
 
 ## Launcher
 
