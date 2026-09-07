@@ -441,9 +441,6 @@ Quickshell load arbitrary host files or remote image URLs. Only `http`,
 - Network: click to manage Wi-Fi scanning and connections, including joining a
   secured network; right-click to toggle Wi-Fi power directly. Wired status is
   shown automatically when Ethernet is connected.
-- Language: click the current two-letter language code to list and select any
-  keyboard layout configured in Hyprland. The indicator updates immediately
-  when the layout changes.
 - Appearance: the **sun/moon icon** switches the shared desktop mode between
   Catppuccin Latte and Mocha. The icon shows the current mode; hover it for the next mode or a command error.
 - AI: shows sandbox and Codex connection progress, then the remaining weekly
@@ -454,5 +451,3 @@ Quickshell load arbitrary host files or remote image URLs. Only `http`,
   between months or click the month title to return to today.
 
 The controls use Quickshell's native MPRIS, PipeWire, and BlueZ integrations.
-The language picker reads Hyprland's configured keyboard layouts at startup,
-when opened, and after layout-change events.

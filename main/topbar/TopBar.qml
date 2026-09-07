@@ -197,8 +197,6 @@ PanelWindow {
 
         NetworkControl {}
 
-        LanguageControl {}
-
         ThemeControl {}
 
         AiChatControl {
