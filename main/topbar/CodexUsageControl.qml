@@ -45,7 +45,7 @@ Rectangle {
     }
 
     visible: CodexUsage.available
-    width: visible ? pillLabel.implicitWidth + Theme.controlHorizontalPadding * 2 : 0
+    width: visible ? pillIcon.implicitWidth + Theme.controlHorizontalPadding * 2 : 0
     height: parent.height
     radius: height / 2
     color: pillMouse.containsMouse || usagePopup.visible ? Theme.surface1 : Theme.surface0
@@ -101,12 +101,10 @@ Rectangle {
     }
 
     UsageText {
-        id: pillLabel
+        id: pillIcon
         anchors.centerIn: parent
-        text: "Codex " + (root.record ? root.tokens(root.record.todayTotalTokens)
-            : CodexUsage.refreshing ? "Loading…" : CodexUsage.error ? "Error" : "—")
-            + (root.record && CodexUsage.error ? " !"
-                : root.record && CodexUsage.refreshing ? " …" : root.setupProblem ? " !" : "")
+        text: "󱚣"
+        font.pixelSize: Theme.fontSize + 2
         color: CodexUsage.error ? Theme.red : root.setupProblem ? Theme.yellow : Theme.blue
     }
 

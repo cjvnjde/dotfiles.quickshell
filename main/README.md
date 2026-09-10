@@ -77,12 +77,12 @@ old usage logs remain. The existing refresh timer detects later installation
 or removal. An installed CLI that needs login or has a temporary limits error
 still shows its status in the popup.
 
-The **Codex token pill** beside the appearance control shows today's recorded
-tokens. Its compact popup contains only limits and reset countdowns, horizontal
+The **Codex usage button** beside the appearance control uses Omarchy's robot
+icon, with no label or numeric count. Its compact popup contains only limits and reset countdowns, horizontal
 daily token bars, and per-model totals. Hover a model for an input/output/cache
 tooltip without expanding the panel. Use `r` to rescan; `Esc` or clicking
 outside closes the popup. There is no provider header or refresh button.
-Errors retain the last successful snapshot and mark the pill instead of
+Errors retain the last successful snapshot and color the icon instead of
 replacing usage with a misleading zero.
 
 This module runs on plain Arch Linux: it requires `quickshell` and `python`.
@@ -477,7 +477,7 @@ Quickshell load arbitrary host files or remote image URLs. Only `http`,
   forgetting. Right-click the bar widget to toggle Wi-Fi power; `Esc` closes.
 - Appearance: the **sun/moon icon** switches the shared desktop mode between
   Catppuccin Latte and Mocha. The icon shows the current mode; hover it for the next mode or a command error.
-- Codex usage: today's token count, with a popup for account limits, daily
+- Codex usage: an icon-only robot button opening account limits, daily
   history, and per-model input/output/cache breakdowns. See [Codex usage](#codex-usage).
 - AI: shows sandbox and Codex connection progress, then the remaining weekly
   subscription allowance when the sandbox exposes it. Click it to open chat.
