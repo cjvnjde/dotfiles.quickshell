@@ -3,8 +3,8 @@
 This module installs the Quickshell configuration used by the Hyprland setup.
 It provides the `main` shell configuration, including the application picker,
 top bar, notifications, media controls, privacy indicators, sound, Bluetooth,
-network, calendar and notes controls, and a Codex-backed AI
-quick chat. See [`main/README.md`](main/README.md#ai-quick-chat) for sandbox setup,
+network, calendar and notes controls, standalone Codex token usage, and a
+Codex-backed AI quick chat. See [`main/README.md`](main/README.md#ai-quick-chat) for sandbox setup,
 security details, IPC commands, and keyboard bindings.
 
 ## Setup

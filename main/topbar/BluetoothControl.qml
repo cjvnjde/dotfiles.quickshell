@@ -1,3 +1,26 @@
+// Bluetooth panel layout and primitive device rows adapted from Omarchy.
+// Source: https://github.com/basecamp/omarchy
+// SPDX-License-Identifier: MIT
+// Copyright (c) David Heinemeier Hansson
+//
+// Permission is hereby granted, free of charge, to any person obtaining
+// a copy of this software and associated documentation files (the
+// "Software"), to deal in the Software without restriction, including
+// without limitation the rights to use, copy, modify, merge, publish,
+// distribute, sublicense, and/or sell copies of the Software, and to
+// permit persons to whom the Software is furnished to do so, subject to
+// the following conditions:
+//
+// The above copyright notice and this permission notice shall be
+// included in all copies or substantial portions of the Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+// EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+// MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
+// NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE
+// LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
+// OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
+// WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 import QtQuick
 import Quickshell
 import Quickshell.Bluetooth
@@ -7,74 +30,68 @@ import ".."
 Rectangle {
     id: root
 
-    readonly property var adapter: Bluetooth.defaultAdapter
-    readonly property bool enabled: adapter !== null && adapter.enabled
-    readonly property var connectedDevices: Bluetooth.devices.values.filter(device => device.connected)
-    readonly property var sortedDevices: adapter
-        ? adapter.devices.values.slice().sort((left, right) => {
-            const rankDifference = root.deviceRank(left) - root.deviceRank(right);
-            if (rankDifference !== 0) {
-                return rankDifference;
-            }
-
-            return root.deviceName(left).localeCompare(root.deviceName(right));
-        })
-        : []
-    property bool managesDiscovery: false
-    property var pairingDevice: null
+    readonly property BluetoothAdapter adapter: Bluetooth.defaultAdapter
+    readonly property bool radioEnabled: !!adapter && adapter.enabled
+    readonly property var devices: adapter ? adapter.devices.values : []
+    // Delegates never retain a BlueZ QObject: discovery/forget can destroy it.
+    readonly property var deviceRows: devices.map(device => ({
+        address: device.address,
+        name: device.name || device.deviceName || device.address || "Unknown device",
+        icon: device.icon || "bluetooth-active-symbolic",
+        connected: device.connected,
+        paired: device.paired,
+        bonded: device.bonded,
+        trusted: device.trusted,
+        blocked: device.blocked,
+        pairing: device.pairing,
+        state: device.state,
+        batteryAvailable: device.batteryAvailable,
+        battery: device.battery,
+        group: device.connected ? "CONNECTED"
+            : device.paired || device.bonded || device.trusted ? "PAIRED" : "AVAILABLE"
+    })).sort((left, right) => {
+        const leftRank = left.connected ? 0 : left.group === "PAIRED" ? 1 : 2;
+        const rightRank = right.connected ? 0 : right.group === "PAIRED" ? 1 : 2;
+        return leftRank - rightRank || left.name.localeCompare(right.name);
+    })
+    readonly property var connectedDevices: deviceRows.filter(device => device.connected)
+    readonly property var visibleRows: radioEnabled ? deviceRows.filter(device =>
+        device.group !== "AVAILABLE" || adapter.discovering || device.pairing
+            || device.address === pairingAddress || device.address === pendingAddress) : []
+    property string selectedAddress: ""
+    property string pairingAddress: ""
+    readonly property BluetoothDevice pairingDevice: deviceFor(pairingAddress)
     property string forgetCandidate: ""
     property string pendingAddress: ""
     property string pendingAction: ""
     property string actionErrorAddress: ""
     property string actionError: ""
+    property bool scanRequested: false
+    // Only a scan started here may be stopped here. Keep the adapter while a
+    // StartDiscovery reply is pending, including after the popup has closed.
+    property BluetoothAdapter discoveryAdapter: null
 
-    function deviceName(device) {
-        return device.name || device.deviceName || device.address || "Unknown device";
+    function deviceFor(address) {
+        if (!address) return null;
+        for (const device of devices) {
+            if (device.address === address) return device;
+        }
+        return null;
     }
 
-    function deviceRank(device) {
-        if (device.connected) {
-            return 0;
-        }
-        if (device.paired || device.bonded) {
-            return 1;
-        }
-
-        return 2;
-    }
-
-    function deviceGroup(device) {
-        const rank = deviceRank(device);
-        if (rank === 0) {
-            return "Connected";
-        }
-        if (rank === 1) {
-            return "Paired";
-        }
-
-        return "Available";
-    }
-
-    function deviceActionPending(device) {
-        return pendingAction.length > 0 && pendingAddress === device.address;
+    function selectDevice(address) {
+        if (selectedAddress !== address) forgetCandidate = "";
+        selectedAddress = address;
     }
 
     function startDeviceAction(device, action) {
-        if (!device || !device.address || bluetoothAction.running || pendingAction.length > 0) {
-            return;
-        }
-
+        if (!device || !radioEnabled || bluetoothAction.running || pendingAction) return;
         forgetCandidate = "";
         actionErrorAddress = "";
         actionError = "";
         pendingAddress = device.address;
         pendingAction = action;
-        bluetoothAction.command = [
-            "bash",
-            Quickshell.shellPath("topbar/BluetoothDevice.sh"),
-            action,
-            device.address
-        ];
+        bluetoothAction.command = ["bash", Quickshell.shellPath("topbar/BluetoothDevice.sh"), action, device.address];
         bluetoothAction.running = true;
     }
 
@@ -82,203 +99,204 @@ Rectangle {
         const address = pendingAddress;
         const action = pendingAction;
         const output = (bluetoothActionError.text || bluetoothActionOutput.text).trim();
-
         pendingAddress = "";
         pendingAction = "";
-        if (exitCode === 0) {
-            return;
-        }
-
+        if (exitCode === 0) return;
         const label = action === "connect" ? "Connection" : "Disconnect";
         actionErrorAddress = address;
         actionError = exitCode === 124 || exitCode === 137
             ? label + " timed out" : label + " failed";
-        console.warn(
-            "Bluetooth " + action + " failed for " + address + ":",
-            output || "helper exited with status " + exitCode
-        );
+        console.warn("Bluetooth " + action + " failed for " + address + ":",
+            output || "helper exited with status " + exitCode);
     }
 
     function deviceStatus(device) {
-        if (device.blocked) {
-            return "Blocked";
-        }
-        if (device.pairing) {
-            return "Pairing…";
-        }
-        if (deviceActionPending(device)) {
+        if (device.pairing || device.address === pairingAddress) return "Pairing…";
+        if (pendingAction && pendingAddress === device.address)
             return pendingAction === "connect" ? "Connecting…" : "Disconnecting…";
-        }
-        if (actionErrorAddress === device.address && actionError.length > 0) {
-            return actionError;
-        }
-        if (device.state === BluetoothDeviceState.Connecting) {
-            return "Connecting…";
-        }
-        if (device.state === BluetoothDeviceState.Disconnecting) {
-            return "Disconnecting…";
-        }
-        if (device.connected) {
-            const battery = device.batteryAvailable ? " · " + Math.round(device.battery * 100) + "%" : "";
-            const trust = device.trusted ? " · Trusted" : "";
-            return "Connected" + battery + trust;
-        }
-        if (device.paired || device.bonded) {
-            return device.trusted ? "Paired · Trusted" : "Paired · Not trusted";
-        }
-
-        return device.address || "Ready to pair";
+        if (actionErrorAddress === device.address && actionError) return actionError;
+        if (device.blocked) return "Blocked";
+        if (device.state === BluetoothDeviceState.Connecting) return "Connecting…";
+        if (device.state === BluetoothDeviceState.Disconnecting) return "Disconnecting…";
+        if (device.connected) return "Connected" + (device.trusted ? " · Trusted" : "");
+        if (device.paired || device.bonded) return device.trusted ? "Paired · Trusted" : "Paired";
+        return device.trusted ? "Trusted" : device.address;
     }
 
     function actionLabel(device) {
-        if (pendingAction.length > 0) {
-            if (deviceActionPending(device)) {
-                return pendingAction === "connect" ? "Connecting" : "Stopping";
-            }
-
-            return "Wait…";
-        }
-        if (pairingDevice && pairingDevice !== device) {
-            return "Wait…";
-        }
-        if (device.blocked) {
-            return "Unblock";
-        }
-        if (device.pairing) {
-            return "Cancel";
-        }
-        if (device.state === BluetoothDeviceState.Connecting) {
-            return "Connecting";
-        }
-        if (device.state === BluetoothDeviceState.Disconnecting) {
-            return "Stopping";
-        }
-        if (device.connected) {
-            return "Disconnect";
-        }
-        if (device.paired || device.bonded) {
-            return "Connect";
-        }
-
-        return "Pair";
+        if (device.pairing) return "Cancel pairing";
+        if (pendingAction && pendingAddress === device.address)
+            return pendingAction === "connect" ? "Connecting…" : "Disconnecting…";
+        if (device.blocked) return "Unblock";
+        return device.connected ? "Disconnect"
+            : device.paired || device.bonded || device.trusted ? "Connect" : "Pair";
     }
 
     function canActivate(device) {
-        return pendingAction.length === 0
-            && (!pairingDevice || pairingDevice === device)
+        if (!device || !radioEnabled || pendingAction || (pairingAddress && pairingAddress !== device.address)) return false;
+        return device.pairing || (!pairingAddress
             && device.state !== BluetoothDeviceState.Connecting
-            && device.state !== BluetoothDeviceState.Disconnecting;
+            && device.state !== BluetoothDeviceState.Disconnecting);
     }
 
-    function activateDevice(device) {
+    function canManage(device) {
+        return canActivate(device) && !device.pairing && !pairingAddress;
+    }
+
+    function activateDevice(address) {
+        const device = deviceFor(address);
+        if (!canActivate(device)) return;
         forgetCandidate = "";
-        if (!canActivate(device)) {
-            return;
-        }
-        if (device.blocked) {
-            actionErrorAddress = "";
-            actionError = "";
-            device.blocked = false;
-            return;
-        }
+        actionErrorAddress = "";
+        actionError = "";
         if (device.pairing) {
+            pairingAddress = "";
+            pairingSettleTimer.stop();
             device.cancelPair();
-            if (pairingDevice === device) {
-                pairingDevice = null;
-            }
-            return;
-        }
-        if (device.connected) {
+        } else if (device.blocked) {
+            device.blocked = false;
+        } else if (device.connected) {
             startDeviceAction(device, "disconnect");
-            return;
-        }
-        if (device.paired || device.bonded) {
+        } else if (device.paired || device.bonded || device.trusted) {
             startDeviceAction(device, "connect");
-            return;
+        } else {
+            pairingAddress = address;
+            // Native BlueZ pairing preserves the desktop agent's PIN/passkey
+            // and authorization prompts; do not replace it with bluetoothctl.
+            device.pair();
         }
-
-        actionErrorAddress = "";
-        actionError = "";
-        pairingDevice = device;
-        device.pair();
     }
 
-    function requestForget(device) {
-        if (!canActivate(device)) {
-            return;
-        }
+    function toggleTrust(address) {
+        const device = deviceFor(address);
+        if (!canManage(device)) return;
+        forgetCandidate = "";
         actionErrorAddress = "";
         actionError = "";
-        if (forgetCandidate !== device.address) {
-            forgetCandidate = device.address;
+        device.trusted = !device.trusted;
+    }
+
+    function requestForget(address) {
+        const device = deviceFor(address);
+        if (!canManage(device) || !(device.paired || device.bonded || device.trusted)) return;
+        selectDevice(address);
+        if (forgetCandidate !== address) {
+            forgetCandidate = address;
             return;
         }
-
-        if (pairingDevice === device) {
-            pairingDevice = null;
-        }
         forgetCandidate = "";
+        actionErrorAddress = "";
+        actionError = "";
         device.forget();
     }
 
     function finishPairing() {
-        const device = pairingDevice;
-        const shouldConnect = device && (device.paired || device.bonded);
-
-        pairingDevice = null;
-        if (shouldConnect) {
+        const address = pairingAddress;
+        const device = deviceFor(address);
+        if (device && device.pairing) return;
+        pairingAddress = "";
+        if (!device) return;
+        if (device.paired || device.bonded) {
             startDeviceAction(device, "connect");
+        } else {
+            actionErrorAddress = address;
+            actionError = "Pairing failed";
         }
     }
 
-    function startDiscovery() {
-        if (!adapter || !enabled || adapter.discovering) {
+    function syncDiscovery() {
+        const wanted = scanRequested && bluetoothPopup.visible && radioEnabled;
+        if (discoveryAdapter && !discoveryAdapter.enabled) discoveryAdapter = null;
+        if (discoveryAdapter && (!wanted || discoveryAdapter !== adapter)) {
+            // The native setter ignores StopDiscovery before Discovering is
+            // true. Wait for that signal rather than leaking an in-flight scan.
+            if (discoveryAdapter.discovering) {
+                const owner = discoveryAdapter;
+                discoveryAdapter = null;
+                owner.discovering = false;
+            }
             return;
         }
-
+        if (!wanted || adapter.discovering) return;
+        discoveryAdapter = adapter;
         adapter.discovering = true;
-        managesDiscovery = true;
-    }
-
-    function stopManagedDiscovery() {
-        if (adapter && managesDiscovery && adapter.discovering) {
-            adapter.discovering = false;
-        }
-        managesDiscovery = false;
     }
 
     function toggleDiscovery() {
-        if (!adapter || !enabled) {
-            return;
+        if (!radioEnabled || !bluetoothPopup.visible) return;
+        if (adapter.discovering && !discoveryAdapter) return;
+        scanRequested = !scanRequested;
+    }
+
+    function togglePower() {
+        if (!adapter || adapter.state === BluetoothAdapterState.Blocked
+                || adapter.state === BluetoothAdapterState.Enabling
+                || adapter.state === BluetoothAdapterState.Disabling) return;
+        if (radioEnabled) {
+            scanRequested = false;
+            if (pairingDevice && pairingDevice.pairing) pairingDevice.cancelPair();
+            pairingAddress = "";
         }
-        if (adapter.discovering) {
-            adapter.discovering = false;
-            managesDiscovery = false;
-        } else {
-            adapter.discovering = true;
-            managesDiscovery = true;
+        adapter.enabled = !radioEnabled;
+    }
+
+    function moveSelection(delta) {
+        if (!visibleRows.length) return;
+        const index = visibleRows.findIndex(device => device.address === selectedAddress);
+        const next = index < 0 ? (delta > 0 ? 0 : visibleRows.length - 1)
+            : Math.max(0, Math.min(visibleRows.length - 1, index + delta));
+        selectDevice(visibleRows[next].address);
+        const item = deviceRepeater.itemAt(next);
+        if (item) {
+            const top = item.mapToItem(details, 0, 0).y;
+            if (top < content.contentY) content.contentY = top;
+            else if (top + item.height > content.contentY + content.height)
+                content.contentY = top + item.height - content.height;
         }
+    }
+
+    onScanRequestedChanged: syncDiscovery()
+    onAdapterChanged: {
+        pairingAddress = "";
+        selectedAddress = "";
+        forgetCandidate = "";
+        syncDiscovery();
+    }
+    onRadioEnabledChanged: {
+        if (!radioEnabled) {
+            pairingAddress = "";
+            forgetCandidate = "";
+        }
+        scanRequested = radioEnabled && bluetoothPopup.visible;
+        syncDiscovery();
+    }
+    onVisibleRowsChanged: {
+        if (selectedAddress && !visibleRows.some(device => device.address === selectedAddress)) {
+            selectedAddress = "";
+            forgetCandidate = "";
+        }
+        if (pairingAddress && !deviceFor(pairingAddress)) {
+            pairingAddress = "";
+            pairingSettleTimer.stop();
+        }
+    }
+    Component.onDestruction: {
+        if (discoveryAdapter && discoveryAdapter.discovering) discoveryAdapter.discovering = false;
     }
 
     width: bluetoothRow.implicitWidth + Theme.controlHorizontalPadding * 2
     height: parent.height
     radius: height / 2
-    color: bluetoothMouse.containsMouse ? Theme.surface1 : Theme.surface0
+    color: bluetoothMouse.containsMouse || bluetoothPopup.visible ? Theme.surface1 : Theme.surface0
+    Accessible.role: Accessible.Button
+    Accessible.name: "Bluetooth"
 
     Process {
         id: bluetoothAction
-
-        stdout: StdioCollector {
-            id: bluetoothActionOutput
-        }
-        stderr: StdioCollector {
-            id: bluetoothActionError
-        }
-        onExited: function(exitCode) {
-            root.finishDeviceAction(exitCode);
-        }
+        stdout: StdioCollector { id: bluetoothActionOutput }
+        stderr: StdioCollector { id: bluetoothActionError }
+        onExited: function(exitCode) { root.finishDeviceAction(exitCode); }
     }
-
     Timer {
         id: pairingSettleTimer
         interval: 250
@@ -287,42 +305,96 @@ Rectangle {
     Timer {
         interval: 1000
         repeat: true
-        running: bluetoothPopup.visible
-            && root.managesDiscovery
-            && root.adapter !== null
-            && root.enabled
+        running: bluetoothPopup.visible && root.scanRequested && root.radioEnabled
             && !root.adapter.discovering
-        onTriggered: root.startDiscovery()
+        onTriggered: root.syncDiscovery()
     }
-
     Connections {
         target: root.pairingDevice
-
         function onPairedChanged() {
-            if (root.pairingDevice
-                    && root.pairingDevice.paired
-                    && !root.pairingDevice.pairing) {
+            if (root.pairingDevice && root.pairingDevice.paired && !root.pairingDevice.pairing)
                 pairingSettleTimer.restart();
-            }
         }
-
         function onPairingChanged() {
-            if (root.pairingDevice && !root.pairingDevice.pairing) {
-                pairingSettleTimer.restart();
+            if (root.pairingDevice && !root.pairingDevice.pairing) pairingSettleTimer.restart();
+        }
+    }
+    Connections {
+        target: root.discoveryAdapter
+        function onDiscoveringChanged() { root.syncDiscovery(); }
+        function onEnabledChanged() { root.syncDiscovery(); }
+    }
+
+    component BluetoothText: Text {
+        color: Theme.text
+        font.family: Theme.fontFamily
+        font.pixelSize: Theme.fontSize
+        textFormat: Text.PlainText
+    }
+    component SectionLabel: BluetoothText {
+        color: Theme.overlay0
+        font.pixelSize: Theme.fontSize - 2
+        font.capitalization: Font.AllUppercase
+    }
+    component BluetoothTooltip: PopupWindow {
+        id: tooltipWindow
+        property string text: ""
+        anchor.edges: Edges.Bottom | Edges.Right
+        anchor.gravity: Edges.Bottom | Edges.Left
+        anchor.margins.top: 6
+        implicitWidth: tooltip.implicitWidth + 20
+        implicitHeight: tooltip.implicitHeight + 16
+        color: "transparent"
+        Rectangle {
+            anchors.fill: parent
+            radius: Theme.radius
+            color: Theme.base
+            border.color: Theme.surface1
+            BluetoothText {
+                id: tooltip
+                anchors.centerIn: parent
+                text: tooltipWindow.text
+                font.pixelSize: Theme.fontSize - 1
             }
         }
     }
-
-    Connections {
-        target: root.adapter
-
-        function onEnabledChanged() {
-            if (!root.enabled) {
-                root.managesDiscovery = false;
-                root.pairingDevice = null;
-            } else if (bluetoothPopup.visible) {
-                root.startDiscovery();
-            }
+    component ActionButton: Rectangle {
+        id: button
+        property string text: ""
+        property string hint: ""
+        property bool highlighted: false
+        property bool destructive: false
+        signal clicked()
+        implicitWidth: Math.max(28, label.implicitWidth + 16)
+        implicitHeight: 26
+        radius: height / 2
+        color: buttonMouse.containsMouse ? Theme.surface1 : highlighted ? Theme.surface0 : "transparent"
+        opacity: enabled ? 1 : 0.4
+        activeFocusOnTab: true
+        border.width: activeFocus ? 1 : 0
+        border.color: Theme.overlay0
+        Accessible.role: Accessible.Button
+        Accessible.name: hint || text
+        Keys.onReturnPressed: clicked()
+        Keys.onSpacePressed: clicked()
+        BluetoothText {
+            id: label
+            anchors.centerIn: parent
+            text: button.text
+            color: button.destructive ? Theme.red : button.highlighted ? Theme.blue : Theme.subtext0
+            font.pixelSize: Theme.fontSize - 2
+        }
+        MouseArea {
+            id: buttonMouse
+            anchors.fill: parent
+            hoverEnabled: true
+            cursorShape: Qt.PointingHandCursor
+            onClicked: button.clicked()
+        }
+        BluetoothTooltip {
+            anchor.item: button
+            visible: buttonMouse.containsMouse && !!text && bluetoothPopup.visible
+            text: button.hint
         }
     }
 
@@ -330,383 +402,301 @@ Rectangle {
         id: bluetoothRow
         anchors.centerIn: parent
         spacing: 5
-
-        Text {
-            text: root.connectedDevices.length > 0 ? "󰂱" : root.enabled ? "󰂯" : "󰂲"
-            color: root.connectedDevices.length > 0 ? Theme.blue : root.enabled ? Theme.text : Theme.overlay0
-            font.family: Theme.fontFamily
+        BluetoothText {
+            text: root.connectedDevices.length ? "󰂱" : root.radioEnabled ? "󰂯" : "󰂲"
+            color: root.connectedDevices.length ? Theme.blue : root.radioEnabled ? Theme.text : Theme.overlay0
             font.pixelSize: Theme.fontSize + 2
         }
-
-        Text {
+        BluetoothText {
             anchors.verticalCenter: parent.verticalCenter
             visible: root.connectedDevices.length > 0
             width: Math.min(implicitWidth, 110)
-            text: root.connectedDevices.length === 1
-                ? root.deviceName(root.connectedDevices[0])
+            text: root.connectedDevices.length === 1 ? root.connectedDevices[0].name
                 : root.connectedDevices.length + " connected"
-            color: Theme.text
             elide: Text.ElideRight
-            font.family: Theme.fontFamily
-            font.pixelSize: Theme.fontSize
         }
     }
-
     MouseArea {
         id: bluetoothMouse
         anchors.fill: parent
         acceptedButtons: Qt.LeftButton | Qt.RightButton
         hoverEnabled: true
-
+        cursorShape: Qt.PointingHandCursor
         onClicked: mouse => {
-            if (mouse.button === Qt.RightButton && root.adapter) {
-                root.adapter.enabled = !root.adapter.enabled;
-                return;
-            }
-
-            bluetoothPopup.visible = !bluetoothPopup.visible;
+            if (mouse.button === Qt.RightButton) root.togglePower();
+            else bluetoothPopup.visible = !bluetoothPopup.visible;
         }
     }
 
     PopupWindow {
         id: bluetoothPopup
-
         anchor.item: root
         anchor.edges: Edges.Bottom | Edges.Right
         anchor.gravity: Edges.Bottom | Edges.Left
         anchor.margins.top: 6
-        width: 410
-        height: 430
+        implicitWidth: Math.min(380, screen ? screen.width - 16 : 380)
+        implicitHeight: Math.min(details.implicitHeight + 28,
+            screen ? screen.height - Theme.barHeight - 24 : 660)
         color: "transparent"
         grabFocus: true
-
         onVisibleChanged: {
             root.forgetCandidate = "";
-            if (visible) {
-                root.startDiscovery();
-            } else {
-                root.stopManagedDiscovery();
-            }
+            root.selectedAddress = "";
+            root.scanRequested = visible && root.radioEnabled;
+            root.syncDiscovery();
+            if (visible) Qt.callLater(() => panel.forceActiveFocus());
         }
 
         Rectangle {
+            id: panel
             anchors.fill: parent
             radius: Theme.radius
             color: Theme.base
             border.color: Theme.surface1
-
-            Text {
-                anchors {
-                    top: parent.top
-                    left: parent.left
-                    margins: 14
-                }
-                text: "Bluetooth devices"
-                color: Theme.text
-                font.bold: true
-                font.family: Theme.fontFamily
-                font.pixelSize: Theme.fontSize + 1
+            focus: true
+            Keys.onPressed: event => {
+                if (event.key === Qt.Key_Escape) {
+                    bluetoothPopup.visible = false;
+                } else if (event.key === Qt.Key_Down || event.key === Qt.Key_J) root.moveSelection(1);
+                else if (event.key === Qt.Key_Up || event.key === Qt.Key_K) root.moveSelection(-1);
+                else if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter) {
+                    if (root.forgetCandidate) root.requestForget(root.forgetCandidate);
+                    else root.activateDevice(root.selectedAddress);
+                } else if (event.key === Qt.Key_Delete) root.requestForget(root.selectedAddress);
+                else if (event.key === Qt.Key_T) root.toggleTrust(root.selectedAddress);
+                else if (event.key === Qt.Key_B) root.togglePower();
+                else if (event.key === Qt.Key_S) root.toggleDiscovery();
+                else return;
+                event.accepted = true;
             }
 
-            Rectangle {
-                anchors {
-                    top: parent.top
-                    right: scanButton.left
-                    topMargin: 9
-                    rightMargin: 8
-                }
-                width: 62
-                height: 28
-                radius: height / 2
-                color: root.enabled ? Theme.blue : Theme.surface1
-                opacity: root.adapter ? 1 : 0.5
-
-                Text {
-                    anchors.centerIn: parent
-                    text: root.enabled ? "On" : "Off"
-                    color: root.enabled ? Theme.base : Theme.subtext0
-                    font.family: Theme.fontFamily
-                    font.pixelSize: Theme.fontSize
-                }
-
-                MouseArea {
-                    anchors.fill: parent
-                    enabled: root.adapter !== null
-                    onClicked: root.adapter.enabled = !root.adapter.enabled
-                }
-            }
-
-            Rectangle {
-                id: scanButton
-                anchors {
-                    top: parent.top
-                    right: parent.right
-                    topMargin: 9
-                    rightMargin: 9
-                }
-                width: 86
-                height: 28
-                radius: height / 2
-                color: root.adapter && root.adapter.discovering ? Theme.green : Theme.surface1
-                opacity: root.enabled ? 1 : 0.5
-
-                Text {
-                    anchors.centerIn: parent
-                    text: root.adapter && root.adapter.discovering ? "Scanning…" : "Scan"
-                    color: root.adapter && root.adapter.discovering ? Theme.base : Theme.text
-                    font.family: Theme.fontFamily
-                    font.pixelSize: Theme.fontSize
-                }
-
-                MouseArea {
-                    anchors.fill: parent
-                    enabled: root.enabled
-                    onClicked: root.toggleDiscovery()
-                }
-            }
-
-            Rectangle {
-                anchors {
-                    top: parent.top
-                    left: parent.left
-                    right: parent.right
-                    topMargin: 47
-                    leftMargin: 10
-                    rightMargin: 10
-                }
-                height: 1
-                color: Theme.surface1
-            }
-
-            Text {
-                anchors.centerIn: parent
-                visible: !root.adapter || !root.enabled || root.sortedDevices.length === 0
-                text: !root.adapter
-                    ? "No Bluetooth adapter"
-                    : !root.enabled ? "Bluetooth is off" : "Scanning for nearby devices…"
-                color: Theme.subtext0
-                font.family: Theme.fontFamily
-                font.pixelSize: Theme.fontSize
-            }
-
-            ListView {
-                id: deviceList
-                anchors {
-                    top: parent.top
-                    bottom: parent.bottom
-                    left: parent.left
-                    right: parent.right
-                    topMargin: 54
-                    bottomMargin: 8
-                    leftMargin: 8
-                    rightMargin: 8
-                }
-                visible: root.adapter !== null && root.enabled && root.sortedDevices.length > 0
+            Flickable {
+                id: content
+                anchors.fill: parent
+                anchors.margins: 14
+                contentWidth: width
+                contentHeight: details.implicitHeight
+                boundsBehavior: Flickable.StopAtBounds
                 clip: true
-                spacing: 4
-                model: ScriptModel {
-                    values: root.sortedDevices
-                    objectProp: "address"
-                }
-
-                delegate: Item {
-                    required property var modelData
-                    required property int index
-                    readonly property bool firstInGroup: index === 0
-                        || root.deviceGroup(modelData) !== root.deviceGroup(root.sortedDevices[index - 1])
-
-                    width: ListView.view.width
-                    height: firstInGroup ? 84 : 60
-
-                    Text {
-                        visible: parent.firstInGroup
-                        anchors {
-                            top: parent.top
-                            left: parent.left
-                            leftMargin: 8
+                Column {
+                    id: details
+                    width: content.width
+                    spacing: 12
+                    Item {
+                        width: parent.width
+                        height: 36
+                        BluetoothText {
+                            id: headerIcon
+                            anchors.verticalCenter: parent.verticalCenter
+                            text: root.radioEnabled ? "󰂯" : "󰂲"
+                            color: root.radioEnabled ? Theme.blue : Theme.overlay0
+                            font.pixelSize: Theme.fontSize + 10
                         }
-                        height: 22
-                        text: root.deviceGroup(parent.modelData)
-                        color: Theme.subtext0
-                        font.bold: true
-                        font.family: Theme.fontFamily
-                        font.pixelSize: Theme.fontSize - 1
+                        Column {
+                            anchors.left: headerIcon.right
+                            anchors.leftMargin: 12
+                            anchors.right: powerButton.left
+                            anchors.rightMargin: 10
+                            anchors.verticalCenter: parent.verticalCenter
+                            spacing: 2
+                            BluetoothText { text: "Bluetooth"; font.bold: true }
+                            SectionLabel {
+                                width: parent.width
+                                visible: !!root.adapter
+                                text: !root.adapter ? "" : root.adapter.state === BluetoothAdapterState.Blocked
+                                    ? "Radio blocked" : root.adapter.state === BluetoothAdapterState.Enabling
+                                    ? "Turning on…" : root.adapter.state === BluetoothAdapterState.Disabling
+                                    ? "Turning off…" : root.radioEnabled ? root.adapter.name : "Turned off"
+                                elide: Text.ElideRight
+                            }
+                        }
+                        ActionButton {
+                            id: powerButton
+                            anchors.right: parent.right
+                            anchors.verticalCenter: parent.verticalCenter
+                            text: root.radioEnabled ? "On" : "Off"
+                            highlighted: root.radioEnabled
+                            hint: "Turn Bluetooth " + (root.radioEnabled ? "off" : "on")
+                            enabled: !!root.adapter && root.adapter.state !== BluetoothAdapterState.Blocked
+                                && root.adapter.state !== BluetoothAdapterState.Enabling
+                                && root.adapter.state !== BluetoothAdapterState.Disabling
+                            onClicked: root.togglePower()
+                        }
                     }
-
-                    Rectangle {
-                        id: deviceCard
-                        anchors {
-                            left: parent.left
-                            right: parent.right
-                            bottom: parent.bottom
-                        }
-                        height: 58
-                        radius: Theme.radius
-                        color: deviceMouse.containsMouse || mainMouse.containsMouse
-                            || trustMouse.containsMouse || forgetMouse.containsMouse
-                            ? Theme.surface0 : "transparent"
-
-                        Image {
-                            id: deviceIcon
-                            anchors {
-                                left: parent.left
-                                verticalCenter: parent.verticalCenter
-                                leftMargin: 10
+                    Rectangle { width: parent.width; height: 1; color: Theme.surface0 }
+                    BluetoothText {
+                        width: parent.width
+                        visible: !root.adapter || !root.radioEnabled || root.visibleRows.length === 0
+                        text: !root.adapter ? "No Bluetooth adapter"
+                            : root.adapter.state === BluetoothAdapterState.Blocked ? "Unblock the Bluetooth radio to continue"
+                            : !root.radioEnabled ? "Turn Bluetooth on to scan"
+                            : root.adapter.discovering ? "Scanning for nearby devices…" : "No devices found"
+                        color: Theme.subtext0
+                        font.pixelSize: Theme.fontSize - 1
+                        wrapMode: Text.Wrap
+                    }
+                    Repeater {
+                        id: deviceRepeater
+                        model: root.visibleRows
+                        delegate: Column {
+                            id: deviceEntry
+                            required property var modelData
+                            required property int index
+                            readonly property bool firstInGroup: index === 0
+                                || !root.visibleRows[index - 1]
+                                || modelData.group !== root.visibleRows[index - 1].group
+                            width: details.width
+                            spacing: 6
+                            Rectangle {
+                                visible: deviceEntry.firstInGroup && deviceEntry.index > 0
+                                width: parent.width
+                                height: 1
+                                color: Theme.surface0
                             }
-                            width: 26
-                            height: 26
-                            source: Quickshell.iconPath(modelData.icon || "bluetooth-active-symbolic")
-                            sourceSize.width: 26
-                            sourceSize.height: 26
-                            fillMode: Image.PreserveAspectFit
-                        }
-
-                        Text {
-                            anchors {
-                                left: deviceIcon.right
-                                right: trustButton.left
-                                top: parent.top
-                                leftMargin: 9
-                                rightMargin: 8
-                                topMargin: 10
+                            SectionLabel {
+                                visible: deviceEntry.firstInGroup
+                                text: deviceEntry.modelData.group
                             }
-                            text: root.deviceName(modelData)
-                            color: modelData.connected ? Theme.blue : Theme.text
-                            elide: Text.ElideRight
-                            font.bold: modelData.connected
-                            font.family: Theme.fontFamily
-                            font.pixelSize: Theme.fontSize
-                        }
-
-                        Text {
-                            anchors {
-                                left: deviceIcon.right
-                                right: trustButton.left
-                                bottom: parent.bottom
-                                leftMargin: 9
-                                rightMargin: 8
-                                bottomMargin: 9
+                            Rectangle {
+                                id: deviceCard
+                                readonly property bool selected: root.selectedAddress === deviceEntry.modelData.address
+                                readonly property bool remembered: deviceEntry.modelData.paired
+                                    || deviceEntry.modelData.bonded || deviceEntry.modelData.trusted
+                                width: parent.width
+                                height: 50
+                                radius: Theme.radius
+                                color: selected || rowHover.hovered ? Theme.surface0 : "transparent"
+                                HoverHandler { id: rowHover }
+                                MouseArea {
+                                    id: deviceMouse
+                                    anchors.fill: parent
+                                    hoverEnabled: true
+                                    cursorShape: root.canActivate(deviceEntry.modelData) ? Qt.PointingHandCursor : Qt.ArrowCursor
+                                    onEntered: root.selectDevice(deviceEntry.modelData.address)
+                                    onClicked: {
+                                        root.selectDevice(deviceEntry.modelData.address);
+                                        root.activateDevice(deviceEntry.modelData.address);
+                                    }
+                                }
+                                Image {
+                                    id: deviceIcon
+                                    anchors.left: parent.left
+                                    anchors.leftMargin: 8
+                                    anchors.verticalCenter: parent.verticalCenter
+                                    width: 24
+                                    height: 24
+                                    source: Quickshell.iconPath(deviceEntry.modelData.icon)
+                                    sourceSize.width: 24
+                                    sourceSize.height: 24
+                                    fillMode: Image.PreserveAspectFit
+                                }
+                                Column {
+                                    anchors.left: deviceIcon.right
+                                    anchors.leftMargin: 10
+                                    anchors.right: secondaryActions.visible ? secondaryActions.left : batteryLabel.left
+                                    anchors.rightMargin: 8
+                                    anchors.verticalCenter: parent.verticalCenter
+                                    spacing: 3
+                                    BluetoothText {
+                                        width: parent.width
+                                        text: deviceEntry.modelData.name
+                                        color: deviceEntry.modelData.connected ? Theme.blue : Theme.text
+                                        elide: Text.ElideRight
+                                    }
+                                    BluetoothText {
+                                        width: parent.width
+                                        text: root.deviceStatus(deviceEntry.modelData)
+                                        color: root.actionErrorAddress === deviceEntry.modelData.address
+                                            && root.actionError || deviceEntry.modelData.blocked ? Theme.red : Theme.overlay0
+                                        font.pixelSize: Theme.fontSize - 2
+                                        elide: Text.ElideRight
+                                    }
+                                }
+                                BluetoothText {
+                                    id: batteryLabel
+                                    anchors.right: parent.right
+                                    anchors.rightMargin: 8
+                                    anchors.verticalCenter: parent.verticalCenter
+                                    visible: !secondaryActions.visible && deviceEntry.modelData.connected
+                                        && deviceEntry.modelData.batteryAvailable
+                                    width: visible ? implicitWidth : 0
+                                    text: Math.round(deviceEntry.modelData.battery * 100) + "%"
+                                    color: Theme.subtext0
+                                    font.pixelSize: Theme.fontSize - 2
+                                }
+                                Row {
+                                    id: secondaryActions
+                                    anchors.right: parent.right
+                                    anchors.rightMargin: 6
+                                    anchors.verticalCenter: parent.verticalCenter
+                                    visible: deviceCard.remembered && (deviceCard.selected || rowHover.hovered)
+                                    spacing: 2
+                                    ActionButton {
+                                        text: "󰒃"
+                                        highlighted: deviceEntry.modelData.trusted
+                                        hint: deviceEntry.modelData.trusted ? "Untrust" : "Trust"
+                                        enabled: root.canManage(deviceEntry.modelData)
+                                        onClicked: root.toggleTrust(deviceEntry.modelData.address)
+                                    }
+                                    ActionButton {
+                                        text: "󰅙"
+                                        hint: "Forget device"
+                                        destructive: root.forgetCandidate === deviceEntry.modelData.address
+                                        enabled: root.canManage(deviceEntry.modelData)
+                                        onClicked: root.requestForget(deviceEntry.modelData.address)
+                                    }
+                                }
+                                BluetoothTooltip {
+                                    anchor.item: deviceCard
+                                    visible: deviceMouse.containsMouse && bluetoothPopup.visible
+                                    text: root.actionLabel(deviceEntry.modelData)
+                                        + (deviceEntry.modelData.batteryAvailable
+                                            ? " · Battery " + Math.round(deviceEntry.modelData.battery * 100) + "%" : "")
+                                }
                             }
-                            text: root.deviceStatus(modelData)
-                            color: root.actionErrorAddress === modelData.address
-                                ? Theme.red
-                                : modelData.blocked ? Theme.red
-                                : modelData.connected ? Theme.green : Theme.subtext0
-                            elide: Text.ElideRight
-                            font.family: Theme.fontFamily
-                            font.pixelSize: Theme.fontSize - 2
-                        }
-
-                        MouseArea {
-                            id: deviceMouse
-                            anchors {
-                                top: parent.top
-                                bottom: parent.bottom
-                                left: parent.left
-                                right: trustButton.left
-                            }
-                            hoverEnabled: true
-                            enabled: root.canActivate(modelData)
-                            onClicked: root.activateDevice(modelData)
-                        }
-
-                        Rectangle {
-                            id: trustButton
-                            anchors {
-                                right: forgetButton.left
-                                verticalCenter: parent.verticalCenter
-                                rightMargin: 5
-                            }
-                            visible: modelData.paired || modelData.bonded
-                            width: visible ? 56 : 0
-                            height: 28
-                            radius: height / 2
-                            color: modelData.trusted ? Theme.green
-                                : trustMouse.containsMouse ? Theme.surface2 : Theme.surface1
-
-                            Text {
-                                anchors.centerIn: parent
-                                text: modelData.trusted ? "Trusted" : "Trust"
-                                color: modelData.trusted ? Theme.base : Theme.text
-                                font.family: Theme.fontFamily
-                                font.pixelSize: Theme.fontSize - 2
-                            }
-
-                            MouseArea {
-                                id: trustMouse
-                                anchors.fill: parent
-                                hoverEnabled: true
-                                enabled: root.canActivate(modelData)
-                                onClicked: {
-                                    root.forgetCandidate = "";
-                                    root.actionErrorAddress = "";
-                                    root.actionError = "";
-                                    modelData.trusted = !modelData.trusted;
+                            Row {
+                                visible: root.forgetCandidate === deviceEntry.modelData.address
+                                anchors.right: parent.right
+                                spacing: 6
+                                ActionButton {
+                                    text: "Cancel"
+                                    onClicked: root.forgetCandidate = ""
+                                }
+                                ActionButton {
+                                    text: "Forget device?"
+                                    destructive: true
+                                    enabled: root.canManage(deviceEntry.modelData)
+                                    onClicked: root.requestForget(deviceEntry.modelData.address)
                                 }
                             }
                         }
-
-                        Rectangle {
-                            id: forgetButton
-                            anchors {
-                                right: mainButton.left
-                                verticalCenter: parent.verticalCenter
-                                rightMargin: 5
-                            }
-                            visible: modelData.paired || modelData.bonded
-                            width: visible ? 58 : 0
-                            height: 28
-                            radius: height / 2
-                            color: root.forgetCandidate === modelData.address
-                                ? Theme.red : forgetMouse.containsMouse ? Theme.surface2 : Theme.surface1
-
-                            Text {
-                                anchors.centerIn: parent
-                                text: root.forgetCandidate === modelData.address ? "Confirm" : "Forget"
-                                color: root.forgetCandidate === modelData.address ? Theme.base : Theme.text
-                                font.family: Theme.fontFamily
-                                font.pixelSize: Theme.fontSize - 2
-                            }
-
-                            MouseArea {
-                                id: forgetMouse
-                                anchors.fill: parent
-                                hoverEnabled: true
-                                enabled: root.canActivate(modelData)
-                                onClicked: root.requestForget(modelData)
-                            }
+                    }
+                    BluetoothText {
+                        width: parent.width
+                        visible: root.radioEnabled && !!root.actionError
+                            && !root.visibleRows.some(device => device.address === root.actionErrorAddress)
+                        text: root.actionError
+                        color: Theme.red
+                        font.pixelSize: Theme.fontSize - 2
+                        wrapMode: Text.Wrap
+                    }
+                    Item {
+                        width: parent.width
+                        height: 26
+                        visible: !!root.adapter && root.radioEnabled
+                        SectionLabel {
+                            anchors.verticalCenter: parent.verticalCenter
+                            text: root.adapter && root.adapter.discovering ? "Scanning"
+                                : root.scanRequested ? "Starting scan…" : "Discovery paused"
                         }
-
-                        Rectangle {
-                            id: mainButton
-                            anchors {
-                                right: parent.right
-                                verticalCenter: parent.verticalCenter
-                                rightMargin: 8
-                            }
-                            width: 78
-                            height: 30
-                            radius: height / 2
-                            color: !root.canActivate(modelData) ? Theme.surface0
-                                : modelData.connected ? Theme.red
-                                : mainMouse.containsMouse ? Theme.lavender : Theme.blue
-                            opacity: root.canActivate(modelData) ? 1 : 0.65
-
-                            Text {
-                                anchors.centerIn: parent
-                                text: root.actionLabel(modelData)
-                                color: root.canActivate(modelData) ? Theme.base : Theme.subtext0
-                                font.family: Theme.fontFamily
-                                font.pixelSize: Theme.fontSize - 2
-                            }
-
-                            MouseArea {
-                                id: mainMouse
-                                anchors.fill: parent
-                                hoverEnabled: true
-                                enabled: root.canActivate(modelData)
-                                onClicked: root.activateDevice(modelData)
-                            }
+                        ActionButton {
+                            anchors.right: parent.right
+                            text: root.adapter && root.adapter.discovering && !root.discoveryAdapter ? "In use"
+                                : root.scanRequested ? "Stop scan" : "Scan"
+                            hint: root.adapter && root.adapter.discovering && !root.discoveryAdapter
+                                ? "Another client is scanning" : "Scan for nearby devices"
+                            enabled: root.radioEnabled && (!root.adapter.discovering || !!root.discoveryAdapter)
+                            onClicked: root.toggleDiscovery()
                         }
                     }
                 }

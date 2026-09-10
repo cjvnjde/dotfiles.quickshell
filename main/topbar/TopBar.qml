@@ -199,6 +199,8 @@ PanelWindow {
 
         ThemeControl {}
 
+        CodexUsageControl {}
+
         AiChatControl {
             controller: root.aiController
         }

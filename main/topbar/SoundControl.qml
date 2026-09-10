@@ -56,10 +56,10 @@ Rectangle {
     property real wheelAccumulator: 0
     property string routeError: ""
 
-    readonly property bool outputAvailable: sink !== null && sink.audio !== null
+    readonly property bool outputAvailable: !!(sink && sink.audio)
     readonly property real outputVolume: outputAvailable ? sink.audio.volume : 0
     readonly property bool outputMuted: outputAvailable && sink.audio.muted
-    readonly property bool inputAvailable: source !== null && source.audio !== null
+    readonly property bool inputAvailable: !!(source && source.audio)
     readonly property real inputVolume: inputAvailable ? source.audio.volume : 0
     readonly property bool inputMuted: inputAvailable && source.audio.muted
     readonly property bool anyAudible: (outputAvailable && !outputMuted)
@@ -164,8 +164,14 @@ Rectangle {
         if (!audioPopup.visible) {
             return;
         }
+        // Snapshot away from PipeWire's removal signal; never retain device
+        // fallbacks after they disappear from the live graph.
         displaySinks = AudioModel.snapshot(candidateSinks);
         displaySources = AudioModel.snapshot(candidateSources);
+        if (sink && displaySinks.indexOf(sink) < 0)
+            displaySinks = [sink].concat(displaySinks);
+        if (source && displaySources.indexOf(source) < 0)
+            displaySources = [source].concat(displaySources);
         displayStreams = AudioModel.snapshot(candidateStreams);
     }
 
@@ -178,11 +184,13 @@ Rectangle {
     onCandidateSinksChanged: scheduleDisplayRefresh()
     onCandidateSourcesChanged: scheduleDisplayRefresh()
     onCandidateStreamsChanged: scheduleDisplayRefresh()
+    onSinkChanged: scheduleDisplayRefresh()
+    onSourceChanged: scheduleDisplayRefresh()
 
     width: soundRow.implicitWidth + Theme.controlHorizontalPadding * 2
     height: parent.height
     radius: height / 2
-    color: soundMouse.containsMouse ? Theme.surface1 : Theme.surface0
+    color: soundMouse.containsMouse || audioPopup.visible ? Theme.surface1 : Theme.surface0
 
     PwObjectTracker {
         objects: root.candidateSinks
@@ -256,6 +264,7 @@ Rectangle {
         anchors.fill: parent
         acceptedButtons: Qt.LeftButton | Qt.RightButton
         hoverEnabled: true
+        cursorShape: Qt.PointingHandCursor
 
         onClicked: mouse => {
             if (mouse.button === Qt.RightButton) {
@@ -280,19 +289,20 @@ Rectangle {
 
     PopupWindow {
         id: audioPopup
-
         anchor.item: root
         anchor.edges: Edges.Bottom | Edges.Right
         anchor.gravity: Edges.Bottom | Edges.Left
         anchor.margins.top: 6
-        width: 360
-        height: Math.min(560, Math.max(180, audioColumn.implicitHeight + 28))
+        implicitWidth: Math.min(380, screen ? screen.width - 16 : 380)
+        implicitHeight: Math.min(audioColumn.implicitHeight + 28,
+            screen ? screen.height - Theme.barHeight - 24 : 660)
         color: "transparent"
         grabFocus: true
 
         onVisibleChanged: {
             if (visible) {
                 root.refreshDisplayModels();
+                Qt.callLater(() => panel.forceActiveFocus());
             } else {
                 audioModelRefresh.stop();
                 root.displaySinks = [];
@@ -302,10 +312,17 @@ Rectangle {
         }
 
         Rectangle {
+            id: panel
             anchors.fill: parent
             radius: Theme.radius
             color: Theme.base
             border.color: Theme.surface1
+            focus: true
+
+            Keys.onEscapePressed: event => {
+                audioPopup.visible = false;
+                event.accepted = true;
+            }
 
             Flickable {
                 id: audioFlick
@@ -319,284 +336,120 @@ Rectangle {
                 Column {
                     id: audioColumn
                     width: audioFlick.width
-                    spacing: 8
-
-                    Item {
-                        width: parent.width
-                        height: 36
-
-                        Text {
-                            anchors {
-                                left: parent.left
-                                verticalCenter: parent.verticalCenter
-                            }
-                            text: "Audio"
-                            color: Theme.text
-                            font.bold: true
-                            font.family: Theme.fontFamily
-                            font.pixelSize: Theme.fontSize + 2
-                        }
-
-                        Rectangle {
-                            anchors {
-                                right: parent.right
-                                verticalCenter: parent.verticalCenter
-                            }
-                            width: 72
-                            height: 26
-                            radius: height / 2
-                            color: root.anyAudible ? Theme.green : Theme.surface1
-
-                            Text {
-                                anchors.centerIn: parent
-                                text: root.anyAudible ? "On" : "Muted"
-                                color: root.anyAudible ? Theme.base : Theme.subtext0
-                                font.family: Theme.fontFamily
-                                font.pixelSize: Theme.fontSize
-                            }
-
-                            MouseArea {
-                                anchors.fill: parent
-                                onClicked: root.toggleAllMuted()
-                            }
-                        }
-                    }
-
-                    Rectangle {
-                        width: parent.width
-                        height: 1
-                        color: Theme.surface1
-                    }
-
-                    SectionHeader {
-                        title: "OUTPUT"
-                        value: root.outputAvailable ? Math.round(root.outputVolume * 100) + "%" : "N/A"
-                    }
-
-                    AudioSlider {
-                        width: parent.width
-                        value: root.outputVolume
-                        maximum: 1
-                        muted: root.outputMuted
-                        enabled: root.outputAvailable
-                        onMoved: value => root.setOutputVolume(value)
-                        onRightClicked: root.toggleOutputMute()
-                    }
-
-                    Text {
-                        visible: root.displaySinks.length === 0
-                        text: "No audio outputs"
-                        color: Theme.subtext0
-                        font.family: Theme.fontFamily
-                        font.pixelSize: Theme.fontSize
-                    }
-
-                    Repeater {
-                        model: root.displaySinks
-
-                        Rectangle {
-                            id: sinkRow
-                            required property var modelData
-                            required property int index
-
-                            readonly property bool active: root.sink
-                                && modelData && root.sink.id === modelData.id
-
-                            width: audioColumn.width
-                            height: 34
-                            radius: Theme.radius
-                            color: active
-                                ? Theme.surface1
-                                : sinkMouse.containsMouse ? Theme.surface0 : "transparent"
-
-                            Text {
-                                anchors {
-                                    left: parent.left
-                                    verticalCenter: parent.verticalCenter
-                                    leftMargin: 8
-                                }
-                                width: 22
-                                text: AudioModel.sinkIcon(sinkRow.modelData)
-                                color: sinkRow.active ? Theme.green : Theme.text
-                                horizontalAlignment: Text.AlignHCenter
-                                font.family: Theme.fontFamily
-                                font.pixelSize: Theme.fontSize + 2
-                            }
-
-                            Text {
-                                anchors {
-                                    left: parent.left
-                                    right: parent.right
-                                    verticalCenter: parent.verticalCenter
-                                    leftMargin: 38
-                                    rightMargin: 8
-                                }
-                                text: AudioModel.nodeLabel(sinkRow.modelData)
-                                color: Theme.text
-                                elide: Text.ElideRight
-                                font.bold: sinkRow.active
-                                font.family: Theme.fontFamily
-                                font.pixelSize: Theme.fontSize
-                            }
-
-                            MouseArea {
-                                id: sinkMouse
-                                anchors.fill: parent
-                                hoverEnabled: true
-                                onClicked: root.setDefaultSink(sinkRow.modelData)
-                            }
-                        }
-                    }
-
-                    Rectangle {
-                        visible: inputSection.visible
-                        width: parent.width
-                        height: visible ? 1 : 0
-                        color: Theme.surface1
-                    }
+                    spacing: 14
 
                     Column {
-                        id: inputSection
-                        visible: root.inputAvailable || root.displaySources.length > 0
                         width: parent.width
-                        spacing: 8
+                        spacing: 4
 
                         SectionHeader {
-                            title: "INPUT"
-                            value: root.inputAvailable ? Math.round(root.inputVolume * 100) + "%" : "N/A"
+                            title: "OUTPUT"
+                            value: root.outputAvailable ? Math.round(root.outputVolume * 100) + "%" : "—"
+                            glyph: root.outputIcon()
+                            muted: root.outputMuted
+                            available: root.outputAvailable
+                            hint: root.outputMuted ? "Unmute output" : "Mute output"
+                            onToggled: root.toggleOutputMute()
                         }
 
                         AudioSlider {
-                            visible: root.inputAvailable
+                            width: parent.width
+                            value: root.outputVolume
+                            maximum: 1
+                            muted: root.outputMuted
+                            enabled: root.outputAvailable
+                            onMoved: value => root.setOutputVolume(value)
+                            onRightClicked: root.toggleOutputMute()
+                        }
+
+                        AudioText {
+                            visible: root.displaySinks.length === 0
+                            text: "No audio outputs"
+                            color: Theme.overlay0
+                            font.pixelSize: Theme.fontSize - 1
+                        }
+
+                        Repeater {
+                            model: root.displaySinks
+                            DeviceRow {
+                                required property var modelData
+                                width: audioColumn.width
+                                node: modelData
+                                selected: !!(root.sink && node && root.sink.id === node.id)
+                                glyph: AudioModel.sinkIcon(node)
+                                onActivated: root.setDefaultSink(node)
+                            }
+                        }
+                    }
+
+                    Divider {}
+
+                    Column {
+                        width: parent.width
+                        spacing: 4
+
+                        SectionHeader {
+                            title: "INPUT"
+                            value: root.inputAvailable ? Math.round(root.inputVolume * 100) + "%" : "—"
+                            glyph: root.inputMuted ? "󰍭" : "󰍬"
+                            muted: root.inputMuted
+                            available: root.inputAvailable
+                            hint: root.inputMuted ? "Unmute microphone" : "Mute microphone"
+                            onToggled: root.toggleInputMute()
+                        }
+
+                        AudioSlider {
                             width: parent.width
                             value: root.inputVolume
                             maximum: 1
                             muted: root.inputMuted
+                            enabled: root.inputAvailable
                             onMoved: value => root.setInputVolume(value)
                             onRightClicked: root.toggleInputMute()
                         }
 
+                        AudioText {
+                            visible: root.displaySources.length === 0
+                            text: "No audio inputs"
+                            color: Theme.overlay0
+                            font.pixelSize: Theme.fontSize - 1
+                        }
+
                         Repeater {
                             model: root.displaySources
-
-                            Rectangle {
-                                id: sourceRow
+                            DeviceRow {
                                 required property var modelData
-                                required property int index
-
-                                readonly property bool active: root.source
-                                    && modelData && root.source.id === modelData.id
-
-                                width: inputSection.width
-                                height: 34
-                                radius: Theme.radius
-                                color: active
-                                    ? Theme.surface1
-                                    : sourceMouse.containsMouse ? Theme.surface0 : "transparent"
-
-                                Text {
-                                    anchors {
-                                        left: parent.left
-                                        verticalCenter: parent.verticalCenter
-                                        leftMargin: 8
-                                    }
-                                    width: 22
-                                    text: AudioModel.sourceIcon(sourceRow.modelData)
-                                    color: sourceRow.active ? Theme.green : Theme.text
-                                    horizontalAlignment: Text.AlignHCenter
-                                    font.family: Theme.fontFamily
-                                    font.pixelSize: Theme.fontSize + 2
-                                }
-
-                                Text {
-                                    anchors {
-                                        left: parent.left
-                                        right: parent.right
-                                        verticalCenter: parent.verticalCenter
-                                        leftMargin: 38
-                                        rightMargin: 8
-                                    }
-                                    text: AudioModel.nodeLabel(sourceRow.modelData)
-                                    color: Theme.text
-                                    elide: Text.ElideRight
-                                    font.bold: sourceRow.active
-                                    font.family: Theme.fontFamily
-                                    font.pixelSize: Theme.fontSize
-                                }
-
-                                MouseArea {
-                                    id: sourceMouse
-                                    anchors.fill: parent
-                                    hoverEnabled: true
-                                    onClicked: root.setDefaultSource(sourceRow.modelData)
-                                }
+                                width: audioColumn.width
+                                node: modelData
+                                selected: !!(root.source && node && root.source.id === node.id)
+                                glyph: AudioModel.sourceIcon(node)
+                                onActivated: root.setDefaultSource(node)
                             }
-                        }
-                    }
-
-                    Rectangle {
-                        visible: routeSection.visible
-                        width: parent.width
-                        height: visible ? 1 : 0
-                        color: Theme.surface1
-                    }
-
-                    Column {
-                        id: routeSection
-                        visible: root.routeAvailable
-                        width: parent.width
-                        spacing: 8
-
-                        SectionHeader {
-                            title: "INPUT MONITOR"
-                            value: root.routeConnected ? "ON" : "OFF"
                         }
 
                         Rectangle {
+                            visible: root.routeAvailable
                             width: parent.width
-                            height: 34
+                            height: 28
                             radius: Theme.radius
                             color: monitorMouse.containsMouse ? Theme.surface0 : "transparent"
 
-                            Text {
-                                anchors {
-                                    left: parent.left
-                                    right: monitorToggle.left
-                                    verticalCenter: parent.verticalCenter
-                                    leftMargin: 8
-                                    rightMargin: 8
-                                }
-                                text: AudioModel.nodeLabel(root.source)
-                                    + " → " + AudioModel.nodeLabel(root.sink)
-                                color: Theme.text
-                                elide: Text.ElideRight
-                                font.family: Theme.fontFamily
-                                font.pixelSize: Theme.fontSize
+                            AudioText {
+                                anchors.left: parent.left
+                                anchors.leftMargin: 8
+                                anchors.verticalCenter: parent.verticalCenter
+                                text: "Preview microphone"
+                                color: Theme.subtext0
+                                font.pixelSize: Theme.fontSize - 1
                             }
 
-                            Rectangle {
-                                id: monitorToggle
-                                anchors {
-                                    right: parent.right
-                                    verticalCenter: parent.verticalCenter
-                                    rightMargin: 4
-                                }
-                                width: 58
-                                height: 26
-                                radius: height / 2
-                                color: routeProcess.running
-                                    ? Theme.yellow
-                                    : root.routeConnected ? Theme.green : Theme.surface1
-
-                                Text {
-                                    anchors.centerIn: parent
-                                    text: routeProcess.running
-                                        ? "..."
-                                        : root.routeConnected ? "On" : "Off"
-                                    color: root.routeConnected ? Theme.base : Theme.subtext0
-                                    font.family: Theme.fontFamily
-                                    font.pixelSize: Theme.fontSize
-                                }
+                            AudioText {
+                                anchors.right: parent.right
+                                anchors.rightMargin: 8
+                                anchors.verticalCenter: parent.verticalCenter
+                                text: routeProcess.running ? "…" : root.routeConnected ? "On" : "Off"
+                                color: root.routeConnected ? Theme.green : Theme.overlay0
+                                font.pixelSize: Theme.fontSize - 1
                             }
 
                             MouseArea {
@@ -604,37 +457,45 @@ Rectangle {
                                 anchors.fill: parent
                                 enabled: !routeProcess.running
                                 hoverEnabled: true
+                                cursorShape: Qt.PointingHandCursor
                                 onClicked: root.toggleInputMonitor()
+                            }
+
+                            AudioTooltip {
+                                anchor.item: monitorMouse
+                                visible: monitorMouse.containsMouse && audioPopup.visible
+                                text: AudioModel.nodeLabel(root.source) + " → " + AudioModel.nodeLabel(root.sink)
                             }
                         }
 
-                        Text {
+                        AudioText {
                             visible: root.routeError.length > 0
                             width: parent.width
                             text: root.routeError
                             color: Theme.red
                             wrapMode: Text.Wrap
-                            font.family: Theme.fontFamily
                             font.pixelSize: Theme.fontSize - 1
                         }
                     }
 
-                    Rectangle {
-                        visible: streamsSection.visible
-                        width: parent.width
-                        height: visible ? 1 : 0
-                        color: Theme.surface1
-                    }
+                    Divider {}
 
                     Column {
                         id: streamsSection
-                        visible: root.displayStreams.length > 0
                         width: parent.width
                         spacing: 8
 
-                        SectionHeader {
-                            title: "APPLICATIONS"
-                            value: root.displayStreams.length
+                        AudioText {
+                            text: "SOURCES"
+                            color: Theme.overlay0
+                            font.pixelSize: Theme.fontSize - 2
+                        }
+
+                        AudioText {
+                            visible: root.displayStreams.length === 0
+                            text: "No playback sources"
+                            color: Theme.overlay0
+                            font.pixelSize: Theme.fontSize - 1
                         }
 
                         Repeater {
@@ -643,75 +504,62 @@ Rectangle {
                             Column {
                                 id: streamRow
                                 required property var modelData
-                                required property int index
-
-                                readonly property real streamVolume: modelData && modelData.audio
-                                    ? modelData.audio.volume : 0
-                                readonly property bool streamMuted: modelData && modelData.audio
-                                    ? modelData.audio.muted : false
-
+                                readonly property bool available: !!(modelData && modelData.audio)
+                                readonly property real streamVolume: available ? modelData.audio.volume : 0
+                                readonly property bool streamMuted: available && modelData.audio.muted
+                                readonly property string label: AudioModel.streamLabel(
+                                    modelData, root.mprisPlayers, root.displayStreams)
                                 width: streamsSection.width
-                                spacing: 4
+                                spacing: 0
+
+                                function toggleMuted() {
+                                    if (available)
+                                        modelData.audio.muted = !modelData.audio.muted;
+                                }
 
                                 Item {
                                     width: parent.width
-                                    height: 22
+                                    height: 24
 
-                                    Text {
-                                        id: streamMuteIcon
-                                        anchors {
-                                            left: parent.left
-                                            verticalCenter: parent.verticalCenter
-                                        }
-                                        width: 24
-                                        text: streamRow.streamMuted ? "󰝟" : "󰕾"
-                                        color: streamRow.streamMuted ? Theme.overlay0 : Theme.text
-                                        horizontalAlignment: Text.AlignHCenter
-                                        font.family: Theme.fontFamily
-                                        font.pixelSize: Theme.fontSize + 2
+                                    MuteButton {
+                                        id: streamMute
+                                        enabled: streamRow.available
+                                        glyph: streamRow.streamMuted ? "󰝟" : "󰕾"
+                                        muted: streamRow.streamMuted
+                                        hint: (muted ? "Unmute " : "Mute ") + streamRow.label
+                                        onToggled: streamRow.toggleMuted()
+                                    }
+
+                                    AudioText {
+                                        id: streamLabel
+                                        anchors.left: streamMute.right
+                                        anchors.right: streamPercent.left
+                                        anchors.verticalCenter: parent.verticalCenter
+                                        anchors.leftMargin: 6
+                                        anchors.rightMargin: 8
+                                        text: streamRow.label
+                                        elide: Text.ElideRight
 
                                         MouseArea {
+                                            id: streamLabelMouse
                                             anchors.fill: parent
-                                            onClicked: {
-                                                if (streamRow.modelData.audio) {
-                                                    streamRow.modelData.audio.muted =
-                                                        !streamRow.modelData.audio.muted;
-                                                }
-                                            }
+                                            hoverEnabled: true
+                                            acceptedButtons: Qt.NoButton
+                                        }
+                                        AudioTooltip {
+                                            anchor.item: streamLabelMouse
+                                            visible: streamLabelMouse.containsMouse && streamLabel.truncated && audioPopup.visible
+                                            text: streamRow.label
                                         }
                                     }
 
-                                    Text {
-                                        anchors {
-                                            left: streamMuteIcon.right
-                                            right: streamPercent.left
-                                            verticalCenter: parent.verticalCenter
-                                            leftMargin: 6
-                                            rightMargin: 6
-                                        }
-                                        text: AudioModel.streamLabel(
-                                            streamRow.modelData,
-                                            root.mprisPlayers,
-                                            root.displayStreams
-                                        )
-                                        color: Theme.text
-                                        elide: Text.ElideRight
-                                        font.family: Theme.fontFamily
-                                        font.pixelSize: Theme.fontSize
-                                    }
-
-                                    Text {
+                                    AudioText {
                                         id: streamPercent
-                                        anchors {
-                                            right: parent.right
-                                            verticalCenter: parent.verticalCenter
-                                        }
-                                        width: 42
+                                        anchors.right: parent.right
+                                        anchors.verticalCenter: parent.verticalCenter
                                         text: Math.round(streamRow.streamVolume * 100) + "%"
-                                        color: Theme.subtext0
-                                        horizontalAlignment: Text.AlignRight
-                                        font.family: Theme.fontFamily
-                                        font.pixelSize: Theme.fontSize - 1
+                                        color: streamRow.streamMuted ? Theme.overlay0 : Theme.subtext0
+                                        font.pixelSize: Theme.fontSize - 2
                                     }
                                 }
 
@@ -720,16 +568,12 @@ Rectangle {
                                     value: streamRow.streamVolume
                                     maximum: 1.5
                                     muted: streamRow.streamMuted
+                                    enabled: streamRow.available
                                     onMoved: value => {
-                                        if (streamRow.modelData.audio) {
+                                        if (streamRow.available)
                                             streamRow.modelData.audio.volume = value;
-                                        }
                                     }
-                                    onRightClicked: {
-                                        if (streamRow.modelData.audio) {
-                                            streamRow.modelData.audio.muted = !streamRow.modelData.audio.muted;
-                                        }
-                                    }
+                                    onRightClicked: streamRow.toggleMuted()
                                 }
                             }
                         }
@@ -739,56 +583,195 @@ Rectangle {
         }
     }
 
-    component SectionHeader: Item {
-        required property string title
-        property var value: ""
+    component AudioText: Text {
+        color: Theme.text
+        font.family: Theme.fontFamily
+        font.pixelSize: Theme.fontSize
+        textFormat: Text.PlainText
+    }
 
+    component Divider: Rectangle {
         width: parent.width
-        height: 20
+        height: 1
+        color: Theme.surface0
+    }
 
-        Text {
-            anchors {
-                left: parent.left
-                verticalCenter: parent.verticalCenter
+    component AudioTooltip: PopupWindow {
+        id: tooltipWindow
+        property string text: ""
+        anchor.edges: Edges.Bottom | Edges.Right
+        anchor.gravity: Edges.Bottom | Edges.Left
+        anchor.margins.top: 6
+        implicitWidth: Math.min(tooltip.implicitWidth + 20, screen ? screen.width - 16 : 500)
+        implicitHeight: tooltip.implicitHeight + 16
+        color: "transparent"
+
+        Rectangle {
+            anchors.fill: parent
+            radius: Theme.radius
+            color: Theme.base
+            border.color: Theme.surface1
+
+            AudioText {
+                id: tooltip
+                anchors.centerIn: parent
+                width: Math.min(implicitWidth, tooltipWindow.width - 20)
+                text: tooltipWindow.text
+                wrapMode: Text.Wrap
+                font.pixelSize: Theme.fontSize - 1
             }
-            text: parent.title
-            color: Theme.subtext0
-            font.bold: true
-            font.family: Theme.fontFamily
+        }
+    }
+
+    component MuteButton: Rectangle {
+        id: muteButton
+        property string glyph: ""
+        property bool muted: false
+        property string hint: ""
+        signal toggled()
+        width: 24
+        height: 24
+        radius: Theme.radius
+        color: muteMouse.containsMouse ? Theme.surface0 : "transparent"
+        opacity: enabled ? 1 : 0.35
+        Accessible.role: Accessible.Button
+        Accessible.name: hint
+
+        AudioText {
+            anchors.centerIn: parent
+            text: muteButton.glyph
+            color: muteButton.muted ? Theme.red : Theme.subtext0
+            font.pixelSize: Theme.fontSize + 2
+        }
+
+        MouseArea {
+            id: muteMouse
+            anchors.fill: parent
+            hoverEnabled: true
+            cursorShape: Qt.PointingHandCursor
+            onClicked: muteButton.toggled()
+        }
+
+        AudioTooltip {
+            anchor.item: muteMouse
+            visible: muteMouse.containsMouse && audioPopup.visible
+            text: muteButton.hint
+        }
+    }
+
+    component SectionHeader: Item {
+        id: header
+        required property string title
+        property string value: ""
+        property string glyph: ""
+        property string hint: ""
+        property bool muted: false
+        property bool available: false
+        signal toggled()
+        width: parent.width
+        height: 24
+
+        AudioText {
+            anchors.left: parent.left
+            anchors.verticalCenter: parent.verticalCenter
+            text: header.title
+            color: Theme.overlay0
+            font.pixelSize: Theme.fontSize - 2
+        }
+
+        AudioText {
+            anchors.right: headerMute.left
+            anchors.rightMargin: 6
+            anchors.verticalCenter: parent.verticalCenter
+            text: header.value
+            color: header.muted ? Theme.overlay0 : Theme.subtext0
+            font.pixelSize: Theme.fontSize - 2
+        }
+
+        MuteButton {
+            id: headerMute
+            anchors.right: parent.right
+            enabled: header.available
+            glyph: header.glyph
+            muted: header.muted
+            hint: header.hint
+            onToggled: header.toggled()
+        }
+    }
+
+    component DeviceRow: Rectangle {
+        id: deviceRow
+        required property var node
+        property bool selected: false
+        property string glyph: ""
+        signal activated()
+        height: 30
+        radius: Theme.radius
+        color: selected || deviceMouse.containsMouse ? Theme.surface0 : "transparent"
+
+        AudioText {
+            anchors.left: parent.left
+            anchors.leftMargin: 8
+            anchors.verticalCenter: parent.verticalCenter
+            width: 20
+            horizontalAlignment: Text.AlignHCenter
+            text: deviceRow.glyph
+            color: deviceRow.selected ? Theme.green : Theme.subtext0
+            font.pixelSize: Theme.fontSize + 2
+        }
+
+        AudioText {
+            id: deviceLabel
+            anchors.left: parent.left
+            anchors.right: parent.right
+            anchors.leftMargin: 36
+            anchors.rightMargin: 26
+            anchors.verticalCenter: parent.verticalCenter
+            text: AudioModel.nodeLabel(deviceRow.node)
+            elide: Text.ElideRight
+        }
+
+        AudioText {
+            anchors.right: parent.right
+            anchors.rightMargin: 8
+            anchors.verticalCenter: parent.verticalCenter
+            text: deviceRow.selected ? "✓" : ""
+            color: Theme.green
             font.pixelSize: Theme.fontSize - 1
         }
 
-        Text {
-            anchors {
-                right: parent.right
-                verticalCenter: parent.verticalCenter
-            }
-            text: parent.value
-            color: Theme.subtext0
-            font.bold: true
-            font.family: Theme.fontFamily
-            font.pixelSize: Theme.fontSize - 1
+        MouseArea {
+            id: deviceMouse
+            anchors.fill: parent
+            enabled: !!deviceRow.node
+            hoverEnabled: true
+            cursorShape: Qt.PointingHandCursor
+            onClicked: deviceRow.activated()
+        }
+
+        AudioTooltip {
+            anchor.item: deviceMouse
+            visible: deviceMouse.containsMouse && deviceLabel.truncated && audioPopup.visible
+            text: deviceLabel.text
         }
     }
 
     component AudioSlider: Item {
         id: slider
-
         required property real value
         required property real maximum
         property bool muted: false
         signal moved(real value)
-        signal rightClicked
-
-        implicitHeight: 22
+        signal rightClicked()
+        implicitHeight: 20
         opacity: enabled ? (muted ? 0.5 : 1) : 0.35
 
         Rectangle {
             anchors.verticalCenter: parent.verticalCenter
             width: parent.width
-            height: 7
+            height: 4
             radius: height / 2
-            color: Theme.surface1
+            color: Theme.surface0
 
             Rectangle {
                 width: parent.width * Math.max(0, Math.min(1, slider.value / slider.maximum))
@@ -798,37 +781,38 @@ Rectangle {
             }
 
             Rectangle {
-                x: Math.max(0, Math.min(
-                    parent.width - width,
-                    parent.width * slider.value / slider.maximum - width / 2
-                ))
+                visible: sliderMouse.containsMouse || sliderMouse.pressed
+                x: Math.max(0, Math.min(parent.width - width,
+                    parent.width * slider.value / slider.maximum - width / 2))
                 anchors.verticalCenter: parent.verticalCenter
-                width: 14
-                height: 14
+                width: 8
+                height: 8
                 radius: width / 2
                 color: Theme.text
             }
         }
 
         MouseArea {
+            id: sliderMouse
             anchors.fill: parent
             acceptedButtons: Qt.LeftButton | Qt.RightButton
+            hoverEnabled: true
+            cursorShape: Qt.PointingHandCursor
+            preventStealing: pressed
 
             function updateValue(mouseX) {
                 slider.moved(Math.max(0, Math.min(1, mouseX / width)) * slider.maximum);
             }
 
             onPressed: mouse => {
-                if (mouse.button === Qt.RightButton) {
+                if (mouse.button === Qt.RightButton)
                     slider.rightClicked();
-                } else {
+                else
                     updateValue(mouse.x);
-                }
             }
             onPositionChanged: mouse => {
-                if (pressed && pressedButtons & Qt.LeftButton) {
+                if (pressed && (pressedButtons & Qt.LeftButton))
                     updateValue(mouse.x);
-                }
             }
         }
     }

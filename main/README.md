@@ -96,6 +96,54 @@ For example, a Hyprland key binding can open the view with:
 bind = SUPER, N, exec, qs -c main ipc call notes toggle
 ```
 
+## Codex usage
+
+The **Codex token pill** beside the appearance control shows today's recorded
+tokens. Its compact popup contains only limits and reset countdowns, horizontal
+daily token bars, and per-model totals. Hover a model for an input/output/cache
+tooltip without expanding the panel. Use `r` to rescan; `Esc` or clicking
+outside closes the popup. There is no provider header or refresh button.
+Errors retain the last successful snapshot and mark the pill instead of
+replacing usage with a misleading zero.
+
+This module runs on plain Arch Linux: it requires `quickshell` and `python`.
+Install the Codex CLI and run `codex login` on the host for authoritative account
+limits. Local token statistics still work without a CLI login. `ripgrep` is
+needed only for the optional pi/OMP history scan; it is already included in
+the parent dotfiles package list. No Omarchy installation, command, or service
+is used.
+
+`topbar/CodexUsage.py` is adapted from Omarchy's MIT-licensed collector; its
+copyright and license are retained in that file. It reads:
+
+- `$CODEX_HOME/sessions` and `archived_sessions` (default `~/.codex`), considering
+  files modified within the last 30 days;
+- `~/.pi/agent/sessions` and `~/.omp/agent/sessions` for `openai-codex` usage;
+- `$XDG_DATA_HOME/opencode/opencode.db` (default `~/.local/share`) read-only,
+  for OpenAI usage.
+
+Totals include cached tokens. Cached input and reasoning output are not counted
+twice, and repeated native token-count notifications do not add usage again.
+Model totals cover available scanned history, not guaranteed lifetime usage.
+Account limits come separately from Codex app-server's account RPCs; they are
+not inferred from token counts.
+
+One `CodexUsage.qml` singleton serves every monitor. It runs the collector at
+startup and every 15 minutes, consumes JSON from stdout, and queues concurrent
+refresh requests. Opening the popup refreshes limits while allowing reuse of
+local statistics. Scan caches live under
+`${XDG_CACHE_HOME:-~/.cache}/quickshell/codex-usage/`.
+
+This is **host-side** usage tracking, separate from AI Quick Chat below.
+It does not read histories or credentials inside Docker sandboxes.
+
+To inspect the collector directly from this directory:
+
+```sh
+python3 topbar/CodexUsage.py --force
+python3 topbar/CodexUsage.py --limits-only
+```
+
 ## AI Quick Chat
 
 The AI backend starts with the shell for the last active project so its sandbox
@@ -429,20 +477,29 @@ Quickshell load arbitrary host files or remote image URLs. Only `http`,
   metadata, and previous, play/pause, and next controls.
 - Privacy: colored dots appear while the microphone, camera, or screen sharing
   is active (red, orange, and purple respectively).
-- Sound: click to open output and input volume controls, device pickers,
-  per-application playback sliders, and an input-monitor switch that directly
-  connects the selected input to the selected output. Right-click the widget to
-  mute or unmute output and input together, or scroll over it to change output
-  volume in 5% steps. Right-click any slider to mute only that channel.
-- Bluetooth: click to open the device popup. It scans while open, keeps
-  connected and paired devices first, and supports pairing, bounded
-  connection and disconnection attempts, trust, visible action failures, and
-  confirmed forgetting; right-click the widget to toggle power.
-- Network: click to manage Wi-Fi scanning and connections, including joining a
-  secured network; right-click to toggle Wi-Fi power directly. Wired status is
-  shown automatically when Ethernet is connected.
+- Sound: compact **OUTPUT**, **INPUT**, and **SOURCES** sections retain device
+  selection, separate output/microphone mute, and per-application volume/mute.
+  Click each section's speaker/microphone icon, or right-click its slider, to
+  mute only that channel. **Preview microphone** connects the selected input
+  directly to the selected output; click again to stop preview. Right-click the
+  bar widget to mute or unmute output and input together, or scroll over it to
+  change output volume in 5% steps. `Esc` closes the popup.
+- Bluetooth: compact **CONNECTED**, **PAIRED**, and **AVAILABLE** device groups,
+  a power control, and discovery while open. Click a row to connect, disconnect,
+  pair, cancel pairing, or unblock. Hover/select remembered devices for
+  trust/untrust and confirmed forgetting. Right-click the bar widget to toggle
+  power; `j`/`k` or arrows select, Enter activates, `t` toggles trust, Delete
+  requests forgetting, `b` toggles power, `s` toggles scanning, and `Esc` closes.
+  Missing adapters and action failures are shown explicitly.
+- Network: compact Ethernet/Wi-Fi connection details with interface addresses,
+  gateway, DNS, live receiving/sending rates, cumulative transfer counts,
+  latency, and packet loss. Wi-Fi retains scanning, radio power, native
+  connect/disconnect, personal-network password entry, and saved-network
+  forgetting. Right-click the bar widget to toggle Wi-Fi power; `Esc` closes.
 - Appearance: the **sun/moon icon** switches the shared desktop mode between
   Catppuccin Latte and Mocha. The icon shows the current mode; hover it for the next mode or a command error.
+- Codex usage: today's token count, with a popup for account limits, daily
+  history, and per-model input/output/cache breakdowns. See [Codex usage](#codex-usage).
 - AI: shows sandbox and Codex connection progress, then the remaining weekly
   subscription allowance when the sandbox exposes it. Click it to open chat.
 - Notes: click the note icon to open the anchored, editable card grid. Its
@@ -450,4 +507,17 @@ Quickshell load arbitrary host files or remote image URLs. Only `http`,
 - Calendar: click the clock to open a monthly calendar. Use the arrows to move
   between months or click the month title to return to today.
 
-The controls use Quickshell's native MPRIS, PipeWire, and BlueZ integrations.
+The controls adapt Omarchy's panel layouts to the shared Quickshell theme, not
+its plugin framework. They use native MPRIS, PipeWire, BlueZ, and NetworkManager
+integrations; no Omarchy installation is required.
+
+Network detail sampling uses `python`, `iproute2`, `networkmanager` (`nmcli`),
+and `iputils` (`ping`). While the popup is open, bounded ICMP probes target the
+active router and `1.1.1.1`; sampling and child probes stop when it closes.
+Transfer totals are kernel interface counters since reset, not billing totals.
+Unknown enterprise/WEP Wi-Fi credentials must first be configured through
+NetworkManager; saved connections remain usable.
+
+Bluetooth connect/disconnect uses the existing `bluetoothctl`/`timeout` helper.
+PIN/passkey dialogs use the desktop's BlueZ pairing agent; this module does not
+register a replacement agent. It stops only discovery it started itself.
