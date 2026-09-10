@@ -7,7 +7,6 @@ import ".."
 PanelWindow {
     id: root
 
-    required property var notesController
     required property var aiController
 
     anchors {
@@ -205,10 +204,6 @@ PanelWindow {
             controller: root.aiController
         }
 
-        NotesControl {
-            controller: root.notesController
-            screenName: root.screen.name
-        }
 
         Rectangle {
             visible: SystemTray.items.values.length > 0

@@ -8,6 +8,7 @@ Singleton {
     id: root
 
     property var record: null
+    readonly property bool available: record !== null && record.available === true
     readonly property bool refreshing: collector.running
     property string error: ""
     property string pendingKind: ""
@@ -37,6 +38,7 @@ Singleton {
         try {
             const next = JSON.parse(text);
             if (!next || next.schemaVersion !== 1 || next.id !== "codex"
+                    || typeof next.available !== "boolean"
                     || !Number.isFinite(next.todayTotalTokens)
                     || !Array.isArray(next.recentDays) || !Array.isArray(next.limits)
                     || !next.modelUsage || typeof next.modelUsage !== "object") {

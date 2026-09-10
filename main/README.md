@@ -23,7 +23,6 @@ They support application actions, and critical notifications remain visible unti
 - `topbar/` contains the bar and its controls.
 - `notifications/` contains the notification daemon and cards.
 - `ai-chat/` contains the AI chat UI, controller, helpers, tests, and chat kit.
-- `notes/` contains persistent note cards and pinned note windows.
 - `Wallpaper.qml` renders a persistent background window on each display.
 - `AppLauncher.qml`, `Theme.qml`, and `SystemTheme.qml` are shared at the
   configuration root.
@@ -36,7 +35,7 @@ The shared mode is stored in `org.gnome.desktop.interface color-scheme`:
 The system's `default` value is treated as light. Changes made with `gsettings`
 also update the shell immediately.
 
-The mode covers the bar, popups, launcher, notes, notifications, and chat.
+The mode covers the bar, popups, launcher, notifications, and chat.
 With this repository's Hyprland configuration, it also updates window borders,
 shadows, group bars, and compositor background colors. Quickshell reapplies the
 selected mode after Hyprland configuration reloads.
@@ -70,33 +69,13 @@ Prefix richer expressions with `=` or `calc `, for example
 The picker can also be controlled through
 `qs -c main ipc call launcher show|hide|toggle`.
 
-## Notes
-
-Click the note icon in the top bar to open the anchored card grid beside it.
-Press `+` to create a note, then type directly in its card. Cards grow
-vertically with their text instead of scrolling internally; the grid scrolls
-when it exceeds the popup height. The header buttons pin or delete the note.
-Pinned notes become Hyprland-managed floating windows that remain above other
-windows, stay editable, grow with their text, and move when their header is
-dragged. Pinning again returns the note to the grid only.
-
-Notes are stored in Quickshell's state directory and survive shell reloads.
-The view can also be controlled through IPC:
-
-```sh
-qs -c main ipc call notes toggle
-qs -c main ipc call notes show
-qs -c main ipc call notes hide
-qs -c main ipc call notes add
-```
-
-For example, a Hyprland key binding can open the view with:
-
-```ini
-bind = SUPER, N, exec, qs -c main ipc call notes toggle
-```
-
 ## Codex usage
+
+The widget appears only when the host Codex CLI is available. It stays hidden
+during the initial check and when Codex is missing or cannot start, even if
+old usage logs remain. The existing refresh timer detects later installation
+or removal. An installed CLI that needs login or has a temporary limits error
+still shows its status in the popup.
 
 The **Codex token pill** beside the appearance control shows today's recorded
 tokens. Its compact popup contains only limits and reset countdowns, horizontal
@@ -502,8 +481,6 @@ Quickshell load arbitrary host files or remote image URLs. Only `http`,
   history, and per-model input/output/cache breakdowns. See [Codex usage](#codex-usage).
 - AI: shows sandbox and Codex connection progress, then the remaining weekly
   subscription allowance when the sandbox exposes it. Click it to open chat.
-- Notes: click the note icon to open the anchored, editable card grid. Its
-  yellow dot indicates that at least one note is pinned.
 - Calendar: click the clock to open a monthly calendar. Use the arrows to move
   between months or click the month title to return to today.
 

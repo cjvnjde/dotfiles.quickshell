@@ -44,10 +44,12 @@ Rectangle {
             + (hours ? hours + "h " : "") + (days ? "" : minutes % 60 + "m");
     }
 
-    width: pillLabel.implicitWidth + Theme.controlHorizontalPadding * 2
+    visible: CodexUsage.available
+    width: visible ? pillLabel.implicitWidth + Theme.controlHorizontalPadding * 2 : 0
     height: parent.height
     radius: height / 2
     color: pillMouse.containsMouse || usagePopup.visible ? Theme.surface1 : Theme.surface0
+    onVisibleChanged: if (!visible) usagePopup.visible = false
 
     SystemClock {
         id: clock

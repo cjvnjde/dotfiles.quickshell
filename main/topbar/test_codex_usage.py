@@ -64,6 +64,7 @@ class CodexUsageTests(unittest.TestCase):
                 "cacheReadInputTokens": 120, "cacheCreationInputTokens": 0,
             })
             # Local history remains useful when no Codex binary is installed.
+            self.assertFalse(record["available"])
             self.assertEqual(record["limits"], [])
             self.assertTrue(record["usageStatusText"])
 

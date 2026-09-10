@@ -580,7 +580,7 @@ def limit_window(window):
 
 
 def fetch_codex_rpc():
-    result = {"limits": [], "tierLabel": "", "usageStatusText": "", "authHelpText": ""}
+    result = {"available": False, "limits": [], "tierLabel": "", "usageStatusText": "", "authHelpText": ""}
     codex = find_command("codex")
     if not codex:
         result["usageStatusText"] = "Codex unavailable"
@@ -601,6 +601,8 @@ def fetch_codex_rpc():
         result["authHelpText"] = str(exc)
         print(f"CodexUsage: {exc}", file=sys.stderr)
         return result
+
+    result["available"] = True
 
     try:
         rpc_request(proc, 1, "initialize", {"clientInfo": {"name": "quickshell-codex-usage", "version": "1"}}, timeout=8)
