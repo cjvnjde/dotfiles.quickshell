@@ -328,8 +328,8 @@ Scope {
             id: launcherCard
 
             anchors.centerIn: parent
-            width: Math.min(720, parent.width - 48)
-            height: Math.min(600, parent.height - 96)
+            width: Math.min(560, parent.width - 48)
+            height: Math.min(436, parent.height - 96)
             radius: 4
             color: Theme.base
             border.width: 1
@@ -349,7 +349,7 @@ Scope {
                     right: parent.right
                     margins: 12
                 }
-                height: 34
+                height: 42
                 radius: 4
                 color: Theme.mantle
                 border.width: 1
@@ -362,13 +362,14 @@ Scope {
                         leftMargin: 12
                     }
                     text: "󰍉"
-                    color: Theme.mauve
+                    color: Theme.subtext0
                     font.family: Theme.fontFamily
                     font.pixelSize: 16
                 }
 
                 TextInput {
                     id: searchInput
+                    objectName: "launcherSearchInput"
 
                     anchors {
                         left: parent.left
@@ -386,7 +387,7 @@ Scope {
 
                     Text {
                         visible: searchInput.text.length === 0
-                        text: "Search applications, commands, or calculate"
+                        text: "Search…"
                         color: Theme.overlay0
                         font: searchInput.font
                     }
@@ -452,35 +453,15 @@ Scope {
                     anchors {
                         left: calculationIcon.right
                         right: parent.right
-                        top: parent.top
+                        verticalCenter: parent.verticalCenter
                         leftMargin: 10
                         rightMargin: 10
-                        topMargin: 4
                     }
-                    text: root.calculationResult
-                    color: Theme.lavender
-                    elide: Text.ElideRight
-                    font.bold: true
-                    font.family: Theme.fontFamily
-                    font.pixelSize: 13
-                }
-
-                Text {
-                    anchors {
-                        left: calculationIcon.right
-                        right: parent.right
-                        bottom: parent.bottom
-                        leftMargin: 10
-                        rightMargin: 10
-                        bottomMargin: 4
-                    }
-                    text: root.calculationResultCurrent
-                        ? "Calculation · Enter to copy"
-                        : "Calculating…"
-                    color: Theme.subtext0
+                    text: root.calculationResultCurrent ? root.calculationResult : "Calculating…"
+                    color: Theme.text
                     elide: Text.ElideRight
                     font.family: Theme.fontFamily
-                    font.pixelSize: 10
+                    font.pixelSize: 14
                 }
 
                 MouseArea {
@@ -491,16 +472,17 @@ Scope {
 
             ListView {
                 id: applicationList
+                objectName: "launcherResults"
 
                 anchors {
                     top: calculationCard.bottom
                     left: parent.left
                     right: parent.right
-                    bottom: footer.top
+                    bottom: parent.bottom
                     topMargin: 8
                     leftMargin: 8
                     rightMargin: 8
-                    bottomMargin: 6
+                    bottomMargin: 8
                 }
                 clip: true
                 spacing: 2
@@ -508,17 +490,21 @@ Scope {
                 boundsBehavior: Flickable.StopAtBounds
 
                 delegate: Rectangle {
+                    id: applicationRow
+
                     required property var modelData
                     required property int index
 
                     readonly property bool selected: root.calculationResult.length === 0 && index === root.selectedIndex
+                    readonly property bool isCommand: modelData.kind === "command"
+                    readonly property bool hovered: appMouse.containsMouse
 
                     width: ListView.view.width
-                    height: 42
+                    height: 44
                     radius: 4
-                    color: selected ? Theme.surface0 : appMouse.containsMouse ? Theme.mantle : "transparent"
+                    color: selected ? Theme.surface0 : hovered ? Theme.mantle : "transparent"
 
-                    Image {
+                    Item {
                         id: appIcon
 
                         anchors {
@@ -528,43 +514,71 @@ Scope {
                         }
                         width: 28
                         height: 28
-                        source: Quickshell.iconPath(modelData.icon, "application-x-executable")
-                        sourceSize: Qt.size(width, height)
-                        fillMode: Image.PreserveAspectFit
-                        asynchronous: true
+
+                        Image {
+                            id: themedIcon
+                            objectName: "launcherResultIcon"
+
+                            anchors.fill: parent
+                            visible: status === Image.Ready
+                            source: Quickshell.iconPath(
+                                applicationRow.isCommand ? "utilities-terminal" : (modelData.icon || ""),
+                                true
+                            )
+                            sourceSize: Qt.size(width, height)
+                            fillMode: Image.PreserveAspectFit
+                            asynchronous: true
+                        }
+
+                        // Keep the result type recognizable even with a missing icon theme.
+                        Rectangle {
+                            objectName: "launcherFallbackIcon"
+                            anchors.centerIn: parent
+                            width: 24
+                            height: 20
+                            visible: themedIcon.status !== Image.Ready
+                            radius: 3
+                            color: "transparent"
+                            border.width: 1
+                            border.color: Theme.subtext0
+
+                            Rectangle {
+                                anchors {
+                                    top: parent.top
+                                    left: parent.left
+                                    right: parent.right
+                                    topMargin: 5
+                                    leftMargin: 1
+                                    rightMargin: 1
+                                }
+                                visible: !applicationRow.isCommand && !modelData.toolAction
+                                height: 1
+                                color: Theme.subtext0
+                            }
+
+                            Text {
+                                anchors.centerIn: parent
+                                text: applicationRow.isCommand ? ">_" : modelData.toolAction === "calculator" ? "=" : ""
+                                color: Theme.subtext0
+                                font.family: Theme.fontFamily
+                                font.pixelSize: 12
+                            }
+                        }
                     }
 
                     Text {
                         anchors {
                             left: appIcon.right
                             right: parent.right
-                            top: parent.top
-                            leftMargin: 10
+                            verticalCenter: parent.verticalCenter
+                            leftMargin: 12
                             rightMargin: 10
-                            topMargin: 4
                         }
                         text: modelData.name
-                        color: selected ? Theme.lavender : Theme.text
-                        elide: Text.ElideRight
-                        font.bold: selected
-                        font.family: Theme.fontFamily
-                        font.pixelSize: 13
-                    }
-
-                    Text {
-                        anchors {
-                            left: appIcon.right
-                            right: parent.right
-                            bottom: parent.bottom
-                            leftMargin: 10
-                            rightMargin: 10
-                            bottomMargin: 4
-                        }
-                        text: modelData.kindLabel + (modelData.subtitle ? " · " + modelData.subtitle : "")
-                        color: Theme.subtext0
+                        color: Theme.text
                         elide: Text.ElideRight
                         font.family: Theme.fontFamily
-                        font.pixelSize: 10
+                        font.pixelSize: 14
                     }
 
                     MouseArea {
@@ -572,8 +586,12 @@ Scope {
 
                         anchors.fill: parent
                         hoverEnabled: true
-                        onEntered: root.selectedIndex = index
-                        onClicked: root.launch(modelData)
+                        cursorShape: Qt.PointingHandCursor
+                        // Hover is only a visual hint; Enter always uses selectedIndex.
+                        onClicked: {
+                            root.selectedIndex = index;
+                            root.launch(modelData);
+                        }
                     }
                 }
 
@@ -584,55 +602,6 @@ Scope {
                     color: Theme.subtext0
                     font.family: Theme.fontFamily
                     font.pixelSize: 14
-                }
-            }
-
-            Item {
-                id: footer
-
-                anchors {
-                    left: parent.left
-                    right: parent.right
-                    bottom: parent.bottom
-                }
-                height: 38
-
-                Rectangle {
-                    anchors {
-                        top: parent.top
-                        left: parent.left
-                        right: parent.right
-                        leftMargin: 18
-                        rightMargin: 18
-                    }
-                    height: 1
-                    color: Theme.surface0
-                }
-
-                Text {
-                    anchors {
-                        left: parent.left
-                        verticalCenter: parent.verticalCenter
-                        leftMargin: 20
-                    }
-                    text: root.filteredResults.length + (root.filteredResults.length === 1 ? " result" : " results")
-                    color: Theme.overlay0
-                    font.family: Theme.fontFamily
-                    font.pixelSize: 10
-                }
-
-                Text {
-                    anchors {
-                        right: parent.right
-                        verticalCenter: parent.verticalCenter
-                        rightMargin: 20
-                    }
-                    text: root.calculationResult.length > 0
-                        ? "enter copy   esc close"
-                        : "↑↓ navigate   enter open   esc close"
-                    color: Theme.overlay0
-                    font.family: Theme.fontFamily
-                    font.pixelSize: 10
                 }
             }
         }

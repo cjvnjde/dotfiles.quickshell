@@ -59,15 +59,28 @@ word boundaries, recent use, and launch frequency refine that order. Selecting
 a command opens it in Ghostty. A full invocation such as `git status` can be
 entered directly.
 
-Use `Up`/`Down` to select a result and `Enter` to launch it. Mathematical
-expressions are evaluated by Qalculate in the same input; `Enter` copies a
-displayed result to the clipboard. Arithmetic such as `2 + 2` works directly.
+The minimalist picker shows only a search input and single-line icon/name
+results. Desktop entries use their application icon when available; commands
+(including terminal-based desktop entries) use a terminal icon. Missing icons
+fall back to a simple application window or command prompt.
+
+Use `Up`/`Down` to select a result and `Enter` to launch it. Hover only adds a
+subtle highlight and never changes the keyboard selection; clicking a row
+selects and opens that result. Mathematical expressions are evaluated by
+Qalculate in the same input; `Enter` copies a displayed result to the clipboard.
+Arithmetic such as `2 + 2` works directly.
 Prefix richer expressions with `=` or `calc `, for example
 `= 10 km to miles`. This requires the `libqalculate` package, which provides
 `qalc`. `Escape` or a click outside the launcher closes it.
 
 The picker can also be controlled through
 `qs -c main ipc call launcher show|hide|toggle`.
+
+Run `python3 test_launcher.py` for isolated mouse/keyboard regression checks in
+both palettes (requires Quickshell, QtTest, and X11/Xwayland). Add
+`--screenshots /tmp/launcher-preview` to capture both themes. The test copy uses
+X11 focus instead of layer-shell so it also runs on GNOME; it does not change
+Hyprland settings, system appearance, or launcher history, or open applications.
 
 ## Codex usage
 
