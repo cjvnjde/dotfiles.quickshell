@@ -476,13 +476,11 @@ Quickshell load arbitrary host files or remote image URLs. Only `http`,
   directly to the selected output; click again to stop preview. Right-click the
   bar widget to mute or unmute output and input together, or scroll over it to
   change output volume in 5% steps. `Esc` closes the popup.
-- Bluetooth: compact **CONNECTED**, **PAIRED**, and **AVAILABLE** device groups,
-  a power control, and discovery while open. Click a row to connect, disconnect,
-  pair, cancel pairing, or unblock. Hover/select remembered devices for
-  trust/untrust and confirmed forgetting. Right-click the bar widget to toggle
-  power; `j`/`k` or arrows select, Enter activates, `t` toggles trust, Delete
-  requests forgetting, `b` toggles power, `s` toggles scanning, and `Esc` closes.
-  Missing adapters and action failures are shown explicitly.
+- Bluetooth: compact paired-device list with connected state, battery when
+  available, and a power control. Pairing, connecting, disconnecting, trusting,
+  and forgetting are intentionally left to dedicated Bluetooth tools such as
+  `bluetui`. Right-click the bar widget, or press `b` in the popup, to toggle
+  power; `Esc` closes. Missing adapters are shown explicitly.
 - Network: compact Ethernet/Wi-Fi connection details with interface addresses,
   gateway, DNS, live receiving/sending rates, cumulative transfer counts,
   latency, and packet loss. Wi-Fi retains scanning, radio power, native
@@ -508,6 +506,5 @@ Transfer totals are kernel interface counters since reset, not billing totals.
 Unknown enterprise/WEP Wi-Fi credentials must first be configured through
 NetworkManager; saved connections remain usable.
 
-Bluetooth connect/disconnect uses the existing `bluetoothctl`/`timeout` helper.
-PIN/passkey dialogs use the desktop's BlueZ pairing agent; this module does not
-register a replacement agent. It stops only discovery it started itself.
+Bluetooth only reads BlueZ adapter/device state and toggles adapter power. Device
+pairing and connection management are intentionally out of scope for this panel.

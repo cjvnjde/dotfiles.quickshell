@@ -59,9 +59,9 @@ Singleton {
     }
 
     function applyHyprland() {
-        if (Quickshell.env("HYPRLAND_INSTANCE_SIGNATURE").length === 0
-                || colorScheme.length === 0 || hyprlandApply.running
-                || appliedHyprlandMode === mode) {
+        const hyprlandSignature = Quickshell.env("HYPRLAND_INSTANCE_SIGNATURE") || "";
+        if (hyprlandSignature.length === 0 || colorScheme.length === 0
+                || hyprlandApply.running || appliedHyprlandMode === mode) {
             return;
         }
 

@@ -75,8 +75,8 @@ Rectangle {
         anchor.edges: Edges.Bottom | Edges.Right
         anchor.gravity: Edges.Bottom | Edges.Left
         anchor.margins.top: 6
-        width: 322
-        height: 330
+        implicitWidth: 322
+        implicitHeight: 330
         color: "transparent"
         grabFocus: true
 

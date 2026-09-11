@@ -54,8 +54,8 @@ Item {
         anchor.edges: Edges.Bottom | Edges.Right
         anchor.gravity: Edges.Bottom | Edges.Left
         anchor.margins.top: 6
-        width: 340
-        height: 148
+        implicitWidth: 340
+        implicitHeight: 148
         color: "transparent"
         grabFocus: true
 
