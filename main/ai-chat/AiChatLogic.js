@@ -345,8 +345,191 @@ function commandItems(draft, availableModels, selectedModel,
 
 function safeAssistantMarkdown(value) {
     return String(value)
-        .replace(/!\[/g, "\\![")
+        .replace(/\\*!\[/g, match =>
+            (match.length - 2) % 2 === 0
+                ? match.slice(0, -2) + "\\![" : match)
         .replace(/</g, "&lt;");
+}
+
+function markdownUnescape(value) {
+    return value.replace(/\\([!-/:-@\[-`{-~])/g, "$1")
+        .replace(/&(?:amp|quot|apos|lt|gt);/g, entity => ({
+            "&amp;": "&", "&quot;": '"', "&apos;": "'",
+            "&lt;": "<", "&gt;": ">"
+        })[entity]);
+}
+
+function markdownLabel(value) {
+    return markdownUnescape(value).trim().replace(/\s+/g, " ").toLowerCase();
+}
+
+function markdownBracketEnd(text, start) {
+    let depth = 1;
+    for (let index = start + 1; index < text.length; index++) {
+        if (text[index] === "\\") {
+            index++;
+        } else if (text[index] === "[") {
+            depth++;
+        } else if (text[index] === "]" && --depth === 0) {
+            return index;
+        }
+    }
+    return -1;
+}
+
+function markdownDestination(text, start) {
+    let index = start;
+    const angle = text[index] === "<";
+    if (angle) {
+        index++;
+    }
+    const contentStart = index;
+    let depth = 0;
+    for (; index < text.length; index++) {
+        const character = text[index];
+        if (character === "\\" && index + 1 < text.length) {
+            index++;
+        } else if (angle) {
+            if (character === ">") {
+                return {
+                    url: markdownUnescape(text.slice(contentStart, index)),
+                    end: index + 1
+                };
+            }
+            if (character === "\n" || character === "<") {
+                return null;
+            }
+        } else if (character === " " || character === "\t" || character === "\r"
+                || character === "\n" || (character === ")" && depth === 0)) {
+            break;
+        } else if (character === "(") {
+            depth++;
+        } else if (character === ")") {
+            depth--;
+        } else if (character === "<") {
+            return null;
+        }
+    }
+    if (angle || depth !== 0) {
+        return null;
+    }
+    return {
+        url: markdownUnescape(text.slice(contentStart, index)),
+        end: index
+    };
+}
+
+function markdownDestinationEnd(text, start) {
+    let index = start;
+    while (index < text.length && /\s/.test(text[index])) {
+        index++;
+    }
+    const opening = text[index];
+    if (index > start && (opening === '"' || opening === "'" || opening === "(")) {
+        const closing = opening === "(" ? ")" : opening;
+        index++;
+        for (; index < text.length && text[index] !== closing; index++) {
+            if (text[index] === "\\") {
+                index++;
+            }
+        }
+        if (index >= text.length) {
+            return -1;
+        }
+        index++;
+        while (index < text.length && /\s/.test(text[index])) {
+            index++;
+        }
+    }
+    return index;
+}
+
+function markdownImageBlocks(text, definitions, definitionText) {
+    const blocks = [];
+    let textStart = 0;
+    function pushText(end) {
+        const body = text.slice(textStart, end);
+        if (body.trim().length > 0) {
+            blocks.push({
+                kind: "markdown", language: "",
+                text: body + (definitionText ? "\n\n" + definitionText : "")
+            });
+        }
+    }
+    for (let index = 0; index < text.length;) {
+        if (text[index] === "\\") {
+            index += text[index + 1] === "!" && text[index + 2] === "[" ? 3 : 2;
+            continue;
+        }
+        if (text[index] === "`") {
+            let end = index + 1;
+            while (text[end] === "`") {
+                end++;
+            }
+            const marker = text.slice(index, end);
+            let closing = text.indexOf(marker, end);
+            while (closing >= 0 && (text[closing - 1] === "`"
+                    || text[closing + marker.length] === "`")) {
+                closing = text.indexOf(marker, closing + marker.length);
+            }
+            index = closing < 0 ? text.length : closing + marker.length;
+            continue;
+        }
+        const image = text[index] === "!" && text[index + 1] === "[";
+        const opening = image ? index + 1 : index;
+        if (text[opening] !== "[") {
+            index++;
+            continue;
+        }
+        const closing = markdownBracketEnd(text, opening);
+        if (closing < 0) {
+            index++;
+            continue;
+        }
+        const label = text.slice(opening + 1, closing);
+        let end = closing + 1;
+        let url = null;
+        if (text[end] === "(") {
+            let destinationStart = end + 1;
+            while (/\s/.test(text[destinationStart] || "") && destinationStart < text.length) {
+                destinationStart++;
+            }
+            const destination = markdownDestination(text, destinationStart);
+            if (destination) {
+                const destinationEnd = markdownDestinationEnd(text, destination.end);
+                if (destinationEnd >= 0 && text[destinationEnd] === ")") {
+                    url = destination.url;
+                    end = destinationEnd + 1;
+                }
+            }
+        } else {
+            let reference = label;
+            if (text[end] === "[") {
+                const referenceEnd = markdownBracketEnd(text, end);
+                if (referenceEnd >= 0) {
+                    reference = text.slice(end + 1, referenceEnd) || label;
+                    end = referenceEnd + 1;
+                }
+            }
+            const definition = definitions[markdownLabel(reference)];
+            if (definition !== undefined) {
+                url = definition;
+            }
+        }
+        if (url !== null && (image || /\.(?:png|jpe?g|gif|webp)(?:[?#].*)?$/i.test(url))) {
+            pushText(index);
+            blocks.push({
+                kind: "image", language: url, text: markdownUnescape(label)
+            });
+            textStart = end;
+            index = end;
+        } else {
+            // Do not interpret nested labels of an ordinary link as previews.
+            index = url !== null ? end : closing + 1;
+        }
+    }
+    pushText(text.length);
+    return blocks;
 }
 
 function markdownBlocks(value) {
@@ -354,31 +537,32 @@ function markdownBlocks(value) {
     const blocks = [];
     let kind = "markdown";
     let language = "";
+    let closingFence = null;
     let buffer = [];
 
     function flushBlock() {
         const text = buffer.join("\n");
         if (kind === "code" || text.length > 0) {
-            blocks.push({
-                kind: kind,
-                language: language,
-                text: text
-            });
+            blocks.push({ kind: kind, language: language, text: text });
         }
         buffer = [];
     }
 
     for (const line of lines) {
         if (kind === "markdown") {
-            const openingFence = line.match(/^[ \t]*```([^`]*)$/);
-            if (openingFence !== null) {
+            const openingFence = line.match(/^[ \t]*(`{3,}|~{3,})(.*)$/);
+            if (openingFence !== null
+                    && (openingFence[1][0] !== "`" || openingFence[2].indexOf("`") < 0)) {
                 flushBlock();
                 kind = "code";
-                language = openingFence[1].trim();
+                const fence = openingFence[1];
+                closingFence = new RegExp("^[ \\t]*" + fence[0]
+                    + "{" + fence.length + ",}[ \\t]*$");
+                language = openingFence[2].trim();
             } else {
                 buffer.push(line);
             }
-        } else if (/^[ \t]*```[ \t]*$/.test(line)) {
+        } else if (closingFence.test(line)) {
             flushBlock();
             kind = "markdown";
             language = "";
@@ -388,10 +572,42 @@ function markdownBlocks(value) {
     }
     flushBlock();
 
-    if (blocks.length === 0) {
-        blocks.push({ kind: "markdown", language: "", text: "" });
+    const definitions = Object.create(null);
+    const definitionLines = [];
+    for (const block of blocks) {
+        if (block.kind !== "markdown") {
+            continue;
+        }
+        block.text = block.text.split("\n").filter(line => {
+            const match = line.match(/^ {0,3}\[((?:\\.|[^\]\\])+)\]:[ \t]*/);
+            if (!match) {
+                return true;
+            }
+            const destination = markdownDestination(line, match[0].length);
+            if (!destination || markdownDestinationEnd(line, destination.end) !== line.length) {
+                return true;
+            }
+            const label = markdownLabel(match[1]);
+            if (definitions[label] === undefined) {
+                definitions[label] = destination.url;
+                definitionLines.push(line);
+            }
+            return false;
+        }).join("\n");
     }
-    return blocks;
+    const rendered = [];
+    const definitionText = definitionLines.join("\n");
+    for (const block of blocks) {
+        if (block.kind === "code") {
+            rendered.push(block);
+        } else {
+            rendered.push(...markdownImageBlocks(block.text, definitions, definitionText));
+        }
+    }
+    if (rendered.length === 0) {
+        rendered.push({ kind: "markdown", language: "", text: "" });
+    }
+    return rendered;
 }
 
 
@@ -489,6 +705,25 @@ function turnCreatedAt(turn) {
         return "";
     }
     return new Date(startedAt * 1000).toISOString();
+}
+
+function assistantItemMarkdown(item) {
+    if (item.type === "agentMessage") {
+        return String(item.text || "");
+    }
+    if (item.type !== "imageGeneration" || item.status === "failed") {
+        return null;
+    }
+    const result = String(item.result || "").trim();
+    const savedPath = String(item.savedPath || "");
+    if (result.length > 0) {
+        return "![Generated image](data:image/png;base64," + result + ")";
+    }
+    if (savedPath.length > 0) {
+        const destination = savedPath.split("/").map(encodeURIComponent).join("/");
+        return "![Generated image](<" + destination + ">)";
+    }
+    return null;
 }
 
 function messagesFromTurns(turns, threadId) {
@@ -589,8 +824,8 @@ function messagesFromTurns(turns, threadId) {
                 }
                 continue;
             }
-            if (itemType === "agentMessage") {
-                const part = String(item.text || "");
+            const part = assistantItemMarkdown(item);
+            if (part !== null) {
                 if (assistant === null) {
                     assistant = persistedMessage(
                         "assistant",
@@ -927,6 +1162,7 @@ if (typeof module !== "undefined") {
         normalizedAttachmentName,
         attachmentMetadataInput,
         attachmentFromMetadataInput,
+        assistantItemMarkdown,
         messagesFromTurns,
         assistantResponseBody,
         isAssistantResponseTail,

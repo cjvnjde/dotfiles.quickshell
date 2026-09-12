@@ -134,6 +134,85 @@ test("markdownBlocks exposes incomplete fenced code while a response streams", (
     );
 });
 
+test("Markdown previews retain text, code and image response order", () => {
+    assert.deepEqual(logic.markdownBlocks(
+        'Before ![Chart](<sandbox:/home/agent/quickshell-ai-outputs/plot (1).png> "Plot") after.\n'
+        + "```text\n![not an image](secret.png)\n```\n"
+        + '[Download](plots/chart(2).PNG?raw=1#preview) [Docs](guide.pdf)'
+    ), [
+        { kind: "markdown", language: "", text: "Before " },
+        {
+            kind: "image",
+            language: "sandbox:/home/agent/quickshell-ai-outputs/plot (1).png",
+            text: "Chart"
+        },
+        { kind: "markdown", language: "", text: " after." },
+        { kind: "code", language: "text", text: "![not an image](secret.png)" },
+        { kind: "image", language: "plots/chart(2).PNG?raw=1#preview", text: "Download" },
+        { kind: "markdown", language: "", text: " [Docs](guide.pdf)" }
+    ]);
+});
+
+test("reference previews resolve forward, collapsed and shortcut labels without losing normal links", () => {
+    const blocks = logic.markdownBlocks(
+        "![First][ My Chart ] ![SECOND][] ![third] [Manual][docs]\n\n"
+        + '[my chart]: <plots/first chart.png> "Title"\n'
+        + "[second]: second.jpg\n"
+        + "[third]: third.webp\n"
+        + "[docs]: https://example.com/manual\n"
+        + "[MY CHART]: ignored.png"
+    );
+    assert.deepEqual(blocks.filter(block => block.kind === "image"), [
+        { kind: "image", language: "plots/first chart.png", text: "First" },
+        { kind: "image", language: "second.jpg", text: "SECOND" },
+        { kind: "image", language: "third.webp", text: "third" }
+    ]);
+    const prose = blocks.filter(block => block.kind === "markdown")
+        .map(block => block.text).join("\n");
+    assert.match(prose, /\[Manual\]\[docs\]/);
+    assert.match(prose, /\[docs\]: https:\/\/example\.com\/manual/);
+    assert.doesNotMatch(prose, /ignored\.png/);
+});
+
+test("escaped and code image syntax never becomes a preview", () => {
+    const text = "\\![escaped](private.png) \\[escaped link](private.jpg) "
+        + "`![inline](private.png)` ``![ticks ` inside](private.png)``\n"
+        + "~~~~\n![fenced](private.png)\n~~~\n";
+    const blocks = logic.markdownBlocks(text);
+    assert.deepEqual(blocks.map(block => block.kind), ["markdown", "code"]);
+    assert.match(blocks[0].text, /private\.png/);
+    assert.equal(blocks[1].text, "![fenced](private.png)\n~~~\n");
+    assert.deepEqual(
+        logic.markdownBlocks("\\\\![visible](public.png)").filter(block => block.kind === "image"),
+        [{ kind: "image", language: "public.png", text: "visible" }]
+    );
+});
+
+test("incomplete images remain safe text until their destination closes", () => {
+    const partial = 'Text ![plot](charts/plot(1).png "title"';
+    assert.deepEqual(logic.markdownBlocks(partial), [
+        { kind: "markdown", language: "", text: partial }
+    ]);
+    assert.deepEqual(logic.markdownBlocks(partial + ")"), [
+        { kind: "markdown", language: "", text: "Text " },
+        { kind: "image", language: "charts/plot(1).png", text: "plot" }
+    ]);
+    assert.equal(
+        logic.safeAssistantMarkdown('<img src="file:///secret"> ![missing][unknown] \\\\![even](x) \\![odd](x)'),
+        '&lt;img src="file:///secret"> \\![missing][unknown] \\\\\\![even](x) \\![odd](x)'
+    );
+});
+
+test("data destinations and escaped balanced destinations retain exact image bytes", () => {
+    const data = "data:image/png;base64,iVBORw0KGgoAAA+/==";
+    assert.deepEqual(logic.markdownBlocks(
+        "![generated](" + data + ") ![a\\]b](plot\\(one\\).png)"
+    ).filter(block => block.kind === "image"), [
+        { kind: "image", language: data, text: "generated" },
+        { kind: "image", language: "plot(one).png", text: "a]b" }
+    ]);
+});
+
 test("messagesFromTurns hydrates attachments and terminal turn states", () => {
     const imageMetadata = logic.attachmentMetadataInput(
         "image",
@@ -196,6 +275,45 @@ test("messagesFromTurns hydrates attachments and terminal turn states", () => {
     assert.equal(messages[2].errorText, "Backend failed");
     assert.equal(messages[3].messageStatus, "interrupted");
     assert.doesNotMatch(JSON.stringify(messages), /private\.(png|txt)/);
+});
+
+test("generated images survive history reconstruction between response text", () => {
+    const image = {
+        id: "image", type: "imageGeneration", status: "completed",
+        result: "iVBORw0KGgo=", savedPath: "/private/generated.png"
+    };
+    const messages = logic.messagesFromTurns([{
+        id: "turn", status: "completed", items: [
+            { id: "before", type: "agentMessage", text: "Before" },
+            image,
+            { id: "failed", type: "imageGeneration", status: "failed", result: "" },
+            { id: "after", type: "agentMessage", text: "After" }
+        ]
+    }], "thread");
+    assert.equal(messages.length, 1);
+    const blocks = logic.markdownBlocks(messages[0].body);
+    assert.deepEqual(blocks.map(block => block.kind), ["markdown", "image", "markdown"]);
+    assert.equal(blocks[0].text.trim(), "Before");
+    assert.equal(blocks[1].language, "data:image/png;base64,iVBORw0KGgo=");
+    assert.equal(blocks[2].text.trim(), "After");
+    assert.doesNotMatch(messages[0].body, /private/);
+    const liveImage = logic.markdownBlocks(logic.assistantItemMarkdown(image));
+    assert.deepEqual(liveImage, [blocks[1]]);
+});
+
+test("saved generated images retain encoded paths without injecting Markdown", () => {
+    const body = logic.assistantItemMarkdown({
+        type: "imageGeneration", status: "completed", result: "",
+        savedPath: "/home/agent/quickshell-ai-outputs/a [plot](1)#.png"
+    });
+    const blocks = logic.markdownBlocks(body);
+    assert.equal(blocks.length, 1);
+    assert.equal(blocks[0].kind, "image");
+    assert.equal(decodeURIComponent(blocks[0].language),
+        "/home/agent/quickshell-ai-outputs/a [plot](1)#.png");
+    assert.equal(logic.assistantItemMarkdown({
+        type: "imageGeneration", status: "in_progress", result: ""
+    }), null);
 });
 
 test("messagesFromTurns represents an in-progress turn without eager duplication", () => {

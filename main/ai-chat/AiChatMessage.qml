@@ -4,6 +4,7 @@ import "AiChatLogic.js" as AiChatLogic
 import ".."
 
 Item {
+    id: message
 
     required property var controller
     required property int index
@@ -13,6 +14,7 @@ Item {
     required property string errorText
     required property string itemId
     required property string turnId
+    required property string threadId
     required property string activityTitle
     required property var attachments
     property bool answerCopied: false
@@ -69,7 +71,7 @@ Item {
 
     TextMetrics {
         id: messageMetrics
-        text: body
+        text: role === "user" ? body : ""
         font.family: Theme.fontFamily
         font.pixelSize: 15
     }
@@ -267,6 +269,20 @@ Item {
                                 interval: 50
                                 onTriggered: assistantMarkdown.styleLinks(
                                     assistantMarkdown.hoveredLink)
+                            }
+                        }
+
+                        Loader {
+                            Layout.fillWidth: true
+                            Layout.preferredHeight: active && item
+                                ? item.implicitHeight : 0
+                            active: markdownBlock.kind === "image"
+                            visible: active
+                            sourceComponent: AiChatImage {
+                                controller: message.controller
+                                imageUrl: markdownBlock.language
+                                altText: markdownBlock.text
+                                threadId: message.threadId
                             }
                         }
 

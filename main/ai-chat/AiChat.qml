@@ -662,12 +662,13 @@ Scope {
             if (!item) {
                 continue;
             }
-            if (item.type === "agentMessage") {
+            const responsePart = AiChatLogic.assistantItemMarkdown(item);
+            if (responsePart !== null) {
                 const itemId = String(item.id || "agent");
                 if (ids.indexOf(itemId) < 0) {
                     ids.push(itemId);
                 }
-                parts[itemId] = String(item.text || "");
+                parts[itemId] = responsePart;
                 activeActivityItemId = "";
             } else if (AiChatLogic.isActivityItem(item)
                     && AiChatLogic.normalizedActivityStatus(
@@ -2092,11 +2093,10 @@ Scope {
         }
         if (method === "item/completed") {
             const item = params.item || {};
-            if (item.type === "agentMessage") {
-                if (item.text !== undefined) {
-                    updateCurrentResponsePart(
-                        item.id || params.itemId, item.text, false);
-                }
+            const responsePart = AiChatLogic.assistantItemMarkdown(item);
+            if (responsePart !== null) {
+                updateCurrentResponsePart(
+                    item.id || params.itemId, responsePart, false);
             } else if (AiChatLogic.isActivityItem(item)) {
                 finishActivity(item.id || params.itemId);
             }

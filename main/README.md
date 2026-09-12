@@ -154,7 +154,12 @@ copying the image waits until the selected sandbox is available.
 The interface is a themed composer that expands into the current
 conversation. Its header opens persisted conversation history and exports the
 loaded conversation as Markdown. All assistant output from one turn renders as
-one Markdown response. Web and email links open externally, use the palette's
+one Markdown response. Markdown images, image-file links, and images returned by
+Codex render inline as aspect-preserving previews. Inline and reference-style
+Markdown images are supported; fenced and inline code remain literal. Previews
+load asynchronously, show alt text on loading or failure, and offer a retry
+action. Missing generated images retry when the current turn finishes. Clicking
+a remote preview opens its source URL. Web and email links open externally, use the palette's
 accent color, and underline only while hovered. An icon-only whole-answer
 copy action appears while a completed answer is hovered, and fenced code renders
 in separate blocks with its own copy icons. While Codex is reasoning or using a
@@ -458,10 +463,17 @@ managed outputs with the sandbox history.
 
 OAuth uses Docker's credential proxy; the raw subscription token remains
 host-side. The app-server necessarily communicates with the Codex service, so
-this is not an offline feature. Model-provided Markdown image and raw-HTML
-syntax is neutralized before display so assistant output cannot make
-Quickshell load arbitrary host files or remote image URLs. Only `http`,
-`https`, and `mailto` links are passed to the system URL handler.
+this is not an offline feature. Inline image previews accept PNG, JPEG, GIF and
+WebP up to 20 MiB from HTTP(S), embedded image data, or the current thread's
+managed output directory (relative paths or
+`sandbox:/home/agent/quickshell-ai-outputs/...`). Remote previews make network
+requests to the image host; the loader sends no browser cookies or authorization
+credentials and permits only HTTP(S) redirects. Local previews reopen regular
+files with no-follow traversal and cannot access arbitrary host paths or other
+threads' outputs. The loader checks raster signatures and passes only inline
+image data to Qt; decoded previews are limited to 1600 × 1600 pixels. Raw HTML,
+SVG and arbitrary `file:` images remain disabled. Only `http`, `https`, and
+`mailto` links are passed to the system URL handler.
 
 ## Bar controls
 
