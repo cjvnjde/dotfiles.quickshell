@@ -161,6 +161,7 @@ Scope {
     }
 
     signal focusComposer()
+    signal imagePreviewRequested(string source, string title)
     signal threadRenameSucceeded(string threadId)
     signal threadDeleteSucceeded(string threadId)
 

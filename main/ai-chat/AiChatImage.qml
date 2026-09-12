@@ -12,7 +12,6 @@ Rectangle {
     required property string altText
     required property string threadId
     readonly property string outputDirectory: controller.activeSandboxOutputDirectory
-    readonly property bool remoteImage: /^https?:\/\//i.test(imageUrl)
     readonly property bool localImage: imageUrl.length > 0
         && !/^(?:https?:|data:|file:)/i.test(imageUrl)
     property string loadedSource: ""
@@ -150,9 +149,9 @@ Rectangle {
 
         MouseArea {
             anchors.fill: parent
-            enabled: root.remoteImage && preview.status === Image.Ready
-            cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
-            onClicked: root.controller.openLink(root.imageUrl)
+            enabled: preview.status === Image.Ready
+            cursorShape: Qt.PointingHandCursor
+            onClicked: root.controller.imagePreviewRequested(root.loadedSource, root.altText)
         }
     }
 

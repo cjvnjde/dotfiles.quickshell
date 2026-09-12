@@ -206,6 +206,7 @@ Item {
                         AiChatAttachment {
                             pending: true
                             onRemoveRequested: controller.removeAttachment(index)
+                            onPreviewRequested: (source, title) => controller.imagePreviewRequested(source, title)
                         }
                     }
                 }

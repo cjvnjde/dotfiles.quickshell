@@ -108,6 +108,7 @@ Item {
                 model: attachments
                 AiChatAttachment {
                     availableWidth: messageBubble.width - 24
+                    onPreviewRequested: (source, title) => message.controller.imagePreviewRequested(source, title)
                 }
             }
 

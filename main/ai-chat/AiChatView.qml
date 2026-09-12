@@ -13,8 +13,20 @@ Scope {
 
     function focusComposer() {
         if (controller.shown && !controller.historyVisible
-                && card.parent !== null) {
-            Qt.callLater(() => composerPanel.focusComposer());
+                && !imageViewer.visible && card.parent !== null) {
+            Qt.callLater(() => {
+                if (!imageViewer.visible) composerPanel.focusComposer();
+            });
+        }
+    }
+
+    function dismiss() {
+        if (imageViewer.visible) {
+            imageViewer.close();
+        } else if (controller.historyVisible) {
+            controller.closeHistory();
+        } else {
+            controller.close();
         }
     }
 
@@ -82,8 +94,7 @@ Scope {
 
             Shortcut {
                 sequence: "Escape"
-                onActivated: view.controller.historyVisible
-                    ? view.controller.closeHistory() : view.controller.close()
+                onActivated: view.dismiss()
             }
 
             MouseArea {
@@ -117,8 +128,7 @@ Scope {
 
         Shortcut {
             sequence: "Escape"
-            onActivated: view.controller.historyVisible
-                ? view.controller.closeHistory() : view.controller.close()
+            onActivated: view.dismiss()
         }
     }
 
@@ -128,8 +138,29 @@ Scope {
             view.focusComposer();
         }
         function onConversationGenerationChanged() {
+            imageViewer.close();
             composerPanel.clearDraft();
         }
+        function onImagePreviewRequested(source, title) {
+            if (view.controller.shown) imageViewer.open(source, title);
+        }
+        function onShownChanged() {
+            if (!view.controller.shown) imageViewer.close();
+        }
+        function onHistoryVisibleChanged() {
+            imageViewer.close();
+        }
+        function onPinnedChanged() {
+            imageViewer.close();
+        }
+    }
+
+    AiChatImageViewer {
+        id: imageViewer
+        parent: card.parent
+        anchors.fill: parent
+        z: 10
+        onClosed: view.focusComposer()
     }
 
     Rectangle {
@@ -138,6 +169,7 @@ Scope {
         parent: windowed
             ? pinnedWindow.contentItem : view.activePopupContentItem
         visible: parent !== null
+        enabled: !imageViewer.visible
 
         anchors.centerIn: parent
         width: parent === null ? 0 : windowed

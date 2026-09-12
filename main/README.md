@@ -158,8 +158,13 @@ one Markdown response. Markdown images, image-file links, and images returned by
 Codex render inline as aspect-preserving previews. Inline and reference-style
 Markdown images are supported; fenced and inline code remain literal. Previews
 load asynchronously, show alt text on loading or failure, and offer a retry
-action. Missing generated images retry when the current turn finishes. Clicking
-a remote preview opens its source URL. Web and email links open externally, use the palette's
+action. Missing generated images retry when the current turn finishes. Click a
+loaded preview or image attachment (including pending attachments) to open an
+enlarged viewer over the chat. Scroll or use `+`/`−` to zoom, drag to pan, and
+double-click to toggle zoom. **Fit** (`0`) resets the view; **100%** shows the
+image at native size. `Escape`, **Close**, or clicking the backdrop returns to
+the chat without closing it. The viewer fills the screen in popup mode and the
+chat window in pinned mode. Web and email links still open externally, use the palette's
 accent color, and underline only while hovered. An icon-only whole-answer
 copy action appears while a completed answer is hovered, and fenced code renders
 in separate blocks with its own copy icons. While Codex is reasoning or using a
@@ -471,8 +476,10 @@ requests to the image host; the loader sends no browser cookies or authorization
 credentials and permits only HTTP(S) redirects. Local previews reopen regular
 files with no-follow traversal and cannot access arbitrary host paths or other
 threads' outputs. The loader checks raster signatures and passes only inline
-image data to Qt; decoded previews are limited to 1600 × 1600 pixels. Raw HTML,
-SVG and arbitrary `file:` images remain disabled. Only `http`, `https`, and
+image data to Qt; inline previews request a 1600 × 1600 decode size. The enlarged
+viewer reuses the resolved image data and loads its native resolution only while
+open, releasing it on close. Raw HTML, SVG and arbitrary `file:` images remain
+disabled. Only `http`, `https`, and
 `mailto` links are passed to the system URL handler.
 
 ## Bar controls

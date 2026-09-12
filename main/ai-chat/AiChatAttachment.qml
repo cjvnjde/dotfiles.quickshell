@@ -13,6 +13,7 @@ Rectangle {
     property real availableWidth: 300
 
     signal removeRequested()
+    signal previewRequested(string source, string title)
 
     Layout.preferredWidth: pending
         ? (attachmentKind === "image" ? 108 : 220)
@@ -25,12 +26,20 @@ Rectangle {
     clip: true
 
     Image {
+        id: preview
         anchors { fill: parent; margins: attachment.pending ? 3 : 0 }
         visible: attachment.attachmentKind === "image"
             && attachment.hostPath.length > 0
         source: visible ? "file://" + attachment.hostPath : ""
         fillMode: Image.PreserveAspectFit
         asynchronous: !attachment.pending
+    }
+
+    MouseArea {
+        anchors.fill: parent
+        enabled: attachment.attachmentKind === "image" && preview.status === Image.Ready
+        cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
+        onClicked: attachment.previewRequested(preview.source.toString(), attachment.displayName)
     }
 
     RowLayout {
