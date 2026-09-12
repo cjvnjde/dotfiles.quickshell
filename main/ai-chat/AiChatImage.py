@@ -115,7 +115,8 @@ def download_image(source: str) -> bytes:
 
 def managed_path_parts(source: str) -> tuple[str, ...]:
     try:
-        path = urllib.parse.unquote(source, encoding="utf-8", errors="strict")
+        source_path = source.split("#", 1)[0].split("?", 1)[0]
+        path = urllib.parse.unquote(source_path, encoding="utf-8", errors="strict")
         if path.startswith("sandbox:"):
             path = path[len("sandbox:"):]
             if not path.startswith(SANDBOX_OUTPUT_PREFIX):

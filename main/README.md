@@ -471,7 +471,9 @@ host-side. The app-server necessarily communicates with the Codex service, so
 this is not an offline feature. Inline image previews accept PNG, JPEG, GIF and
 WebP up to 20 MiB from HTTP(S), embedded image data, or the current thread's
 managed output directory (relative paths or
-`sandbox:/home/agent/quickshell-ai-outputs/...`). Remote previews make network
+`sandbox:/home/agent/quickshell-ai-outputs/...`). Local URL query strings and
+fragments are ignored; literal filename `?`/`#` characters must be encoded as
+`%3F`/`%23`. Remote previews make network
 requests to the image host; the loader sends no browser cookies or authorization
 credentials and permits only HTTP(S) redirects. Local previews reopen regular
 files with no-follow traversal and cannot access arbitrary host paths or other

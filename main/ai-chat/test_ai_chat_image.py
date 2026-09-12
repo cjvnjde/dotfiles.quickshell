@@ -77,6 +77,25 @@ class ImageSourceTests(unittest.TestCase):
                         data_url(PNG),
                     )
 
+    def test_managed_urls_strip_suffixes_before_decoding_filenames(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory) / "outputs"
+            AiOutputs.prepare_thread_outputs(str(root), "thread-1")
+            thread = root / "thread-1"
+            (thread / "plot.png").write_bytes(PNG)
+            (thread / "plot?#.png").write_bytes(GIF)
+            self.assertEqual(
+                AiChatImage.resolve_image(str(root), "thread-1", "plot.png?raw=1#preview"),
+                data_url(PNG),
+            )
+            self.assertEqual(
+                AiChatImage.resolve_image(
+                    str(root), "thread-1",
+                    "sandbox:/home/agent/quickshell-ai-outputs/plot%3F%23.png#preview?raw=1",
+                ),
+                data_url(GIF, "image/gif"),
+            )
+
     def test_managed_paths_cannot_escape_thread_or_follow_symlinks(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:
             root = Path(temporary_directory) / "outputs"
