@@ -196,6 +196,8 @@ PanelWindow {
 
         NetworkControl {}
 
+        KeyboardLayoutControl {}
+
         ThemeControl {}
 
         CodexUsageControl {}

@@ -507,6 +507,9 @@ disabled. Only `http`, `https`, and
   latency, and packet loss. Wi-Fi retains scanning, radio power, native
   connect/disconnect, personal-network password entry, and saved-network
   forgetting. Right-click the bar widget to toggle Wi-Fi power; `Esc` closes.
+- Keyboard layout: shows `EN` or `RU` for the active Hyprland layout. Click it
+  and select **English** or **Русский** from the menu. Layout switching has no
+  keyboard shortcut.
 - Appearance: the **sun/moon icon** switches the shared desktop mode between
   Catppuccin Latte and Mocha. The icon shows the current mode; hover it for the next mode or a command error.
 - Codex usage: an icon-only robot button opening account limits, daily
