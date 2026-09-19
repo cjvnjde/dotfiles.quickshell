@@ -1,2 +1,3 @@
 NotificationOverlay 1.0 NotificationOverlay.qml
 NotificationCard 1.0 NotificationCard.qml
+NotificationHistoryCard 1.0 NotificationHistoryCard.qml

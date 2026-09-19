@@ -5,6 +5,9 @@ import "notifications"
 import "ai-chat"
 
 ShellRoot {
+    NotificationOverlay {
+        id: notificationCenter
+    }
 
     Variants {
         model: Quickshell.screens
@@ -22,10 +25,9 @@ ShellRoot {
             required property var modelData
             screen: modelData
             aiController: aiChat
+            notificationController: notificationCenter
         }
     }
-
-    NotificationOverlay {}
 
     AppLauncher {}
 

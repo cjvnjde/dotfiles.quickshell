@@ -10,3 +10,4 @@ MediaControl 1.0 MediaControl.qml
 PrivacyIndicators 1.0 PrivacyIndicators.qml
 singleton CodexUsage 1.0 CodexUsage.qml
 CodexUsageControl 1.0 CodexUsageControl.qml
+NotificationControl 1.0 NotificationControl.qml

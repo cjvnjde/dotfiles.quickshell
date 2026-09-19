@@ -8,6 +8,7 @@ PanelWindow {
     id: root
 
     required property var aiController
+    required property var notificationController
 
     anchors {
         top: true
@@ -197,6 +198,10 @@ PanelWindow {
         NetworkControl {}
 
         KeyboardLayoutControl {}
+        NotificationControl {
+            controller: root.notificationController
+            targetScreen: root.screen
+        }
 
         ThemeControl {}
 
