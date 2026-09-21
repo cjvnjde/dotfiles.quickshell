@@ -59,6 +59,8 @@ Rectangle {
         RowLayout {
             id: notificationContent
             Layout.fillWidth: true
+            Layout.rightMargin: 36
+            Layout.minimumHeight: 28
             spacing: 0
 
             Image {
@@ -161,6 +163,37 @@ Rectangle {
                 return;
             }
             notification.dismiss();
+        }
+    }
+
+    Rectangle {
+        anchors {
+            top: parent.top
+            right: parent.right
+            margins: 8
+        }
+        width: 28
+        height: 28
+        radius: 6
+        color: dismissMouse.containsMouse ? Theme.surface0 : "transparent"
+        Accessible.role: Accessible.Button
+        Accessible.name: "Dismiss notification"
+        Accessible.onPressAction: root.notification.dismiss()
+
+        Text {
+            anchors.centerIn: parent
+            text: "󰅖"
+            color: dismissMouse.containsMouse ? Theme.red : Theme.subtext0
+            font.family: Theme.fontFamily
+            font.pixelSize: Theme.fontSize + 2
+        }
+
+        MouseArea {
+            id: dismissMouse
+            anchors.fill: parent
+            hoverEnabled: true
+            cursorShape: Qt.PointingHandCursor
+            onClicked: root.notification.dismiss()
         }
     }
 

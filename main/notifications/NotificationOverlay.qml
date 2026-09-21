@@ -71,11 +71,15 @@ Scope {
         saveHistory();
     }
 
+    function closeCenter() {
+        centerOpen = false;
+        expanded = false;
+        showingHistory = false;
+    }
+
     function toggleCenter(targetScreen) {
         if (centerOpen) {
-            centerOpen = false;
-            expanded = false;
-            showingHistory = false;
+            closeCenter();
             return;
         }
 
@@ -130,24 +134,25 @@ Scope {
             id: notificationPanel
 
             required property var modelData
+            readonly property real controlsHeight: root.centerOpen
+                ? panelHeader.implicitHeight + panelFooter.implicitHeight + 4 : 0
             readonly property real maximumListHeight: Math.max(
                 120,
                 screen.height - Theme.barHeight - Theme.notificationMargin
-                    - panelHeader.implicitHeight - panelFooter.implicitHeight - 4
+                    - controlsHeight
             )
 
             screen: modelData
             visible: root.centerOpen || root.activeCount > 0
             color: "transparent"
             implicitWidth: 400
-            implicitHeight: panelHeader.implicitHeight
-                + Math.min(
+            implicitHeight: controlsHeight + Math.min(
                     root.showingHistory
                         ? (root.historyCount > 0 ? historyList.contentHeight : 80)
                         : notificationList.contentHeight,
                     maximumListHeight
                 )
-                + panelFooter.implicitHeight + 4
+
             exclusiveZone: 0
 
             anchors {
@@ -167,6 +172,7 @@ Scope {
                     id: panelHeader
 
                     Layout.fillWidth: true
+                    visible: root.centerOpen
                     implicitHeight: 36
                     radius: Theme.radius
                     color: Theme.base
@@ -188,29 +194,34 @@ Scope {
                         font.weight: Font.DemiBold
                     }
 
-                    Text {
+                    Rectangle {
                         anchors {
                             right: parent.right
                             verticalCenter: parent.verticalCenter
-                            rightMargin: 12
+                            rightMargin: 4
                         }
-                        visible: root.centerOpen
-                        text: "󰅖"
-                        color: closeMouse.containsMouse ? Theme.red : Theme.subtext0
-                        font.family: Theme.fontFamily
-                        font.pixelSize: Theme.fontSize + 2
+                        width: 28
+                        height: 28
+                        radius: 6
+                        color: closeMouse.containsMouse ? Theme.surface0 : "transparent"
+                        Accessible.role: Accessible.Button
+                        Accessible.name: "Close notification center"
+                        Accessible.onPressAction: root.closeCenter()
+
+                        Text {
+                            anchors.centerIn: parent
+                            text: "󰅖"
+                            color: closeMouse.containsMouse ? Theme.red : Theme.subtext0
+                            font.family: Theme.fontFamily
+                            font.pixelSize: Theme.fontSize + 2
+                        }
 
                         MouseArea {
                             id: closeMouse
                             anchors.fill: parent
-                            anchors.margins: -8
                             hoverEnabled: true
                             cursorShape: Qt.PointingHandCursor
-                            onClicked: {
-                                root.centerOpen = false;
-                                root.expanded = false;
-                                root.showingHistory = false;
-                            }
+                            onClicked: root.closeCenter()
                         }
                     }
                 }
@@ -278,6 +289,7 @@ Scope {
                     id: panelFooter
 
                     Layout.fillWidth: true
+                    visible: root.centerOpen
                     implicitHeight: 36
                     radius: Theme.radius
                     color: Theme.base

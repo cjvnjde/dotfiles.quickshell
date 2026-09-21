@@ -16,10 +16,12 @@ located at `~/.config/quickshell/main`.
 
 The bar reserves 24 pixels at the top of every display. Notifications appear in
 the upper-right corner with an even six-pixel gap from the bar and screen edge.
-At most three cards are shown until **Show all** is selected. The footer exposes
-**Clear all** and a notification history, while the bell in the top bar opens
-the center after its popups close. Up to 100 non-transient notifications are
-kept across shell restarts and can be removed with **Clear history**.
+Automatic popups show at most three notification cards, each with its own close
+button, without a header or footer. The bell in the top bar opens the full
+notification center with its header, **Show all** / **Show latest 3** controls,
+**Clear all**, and history. Closing the center returns to card-only popups without
+dismissing active notifications. Up to 100 non-transient notifications are kept
+across shell restarts and can be removed with **Clear history**.
 Application actions remain available, and critical notifications stay visible
 until dismissed.
 
