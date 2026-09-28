@@ -35,7 +35,7 @@ QtObject {
     function sandboxOutputDirectoryForProject(projectId) {
         return sandboxWorkspaceForProject(projectId) + "/outputs";
     }
-    readonly property bool backendAutoStart: true
+    readonly property bool backendAutoStart: Quickshell.env("QUICKSHELL_AI_AUTOSTART") !== "0"
     readonly property bool debug: Quickshell.env("QUICKSHELL_AI_DEBUG") === "1"
     readonly property int chatWidth: 760
     readonly property int chatMaxHeight: 980

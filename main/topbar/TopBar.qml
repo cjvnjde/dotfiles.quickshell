@@ -208,6 +208,7 @@ PanelWindow {
         CodexUsageControl {}
 
         AiChatControl {
+            visible: Quickshell.env("QUICKSHELL_AI_AUTOSTART") !== "0"
             controller: root.aiController
         }
 
