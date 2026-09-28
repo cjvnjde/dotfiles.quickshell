@@ -27,7 +27,7 @@ until dismissed.
 
 ## Structure
 
-- `topbar/` contains the bar and its controls.
+- `topbar/` hosts the bar; `modules/<id>/` contains each module and its helpers. `bar.json` controls placement and `Theme.qml` supplies shared styling. See [the module guide](modules/README.md).
 - `notifications/` contains the notification daemon and cards.
 - `ai-chat/` contains the AI chat UI, controller, helpers, tests, and chat kit.
 - `Wallpaper.qml` renders a persistent background window on each display.
@@ -112,7 +112,7 @@ needed only for the optional pi/OMP history scan; it is already included in
 the parent dotfiles package list. No Omarchy installation, command, or service
 is used.
 
-`topbar/CodexUsage.py` is adapted from Omarchy's MIT-licensed collector; its
+`modules/agent-usage/CodexUsage.py` is adapted from Omarchy's MIT-licensed collector; its
 copyright and license are retained in that file. It reads:
 
 - `$CODEX_HOME/sessions` and `archived_sessions` (default `~/.codex`), considering
@@ -139,8 +139,8 @@ It does not read histories or credentials inside Docker sandboxes.
 To inspect the collector directly from this directory:
 
 ```sh
-python3 topbar/CodexUsage.py --force
-python3 topbar/CodexUsage.py --limits-only
+python3 modules/agent-usage/CodexUsage.py --force
+python3 modules/agent-usage/CodexUsage.py --limits-only
 ```
 
 ## AI Quick Chat

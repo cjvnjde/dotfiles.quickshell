@@ -1,13 +1,3 @@
-ThemeControl 1.0 ThemeControl.qml
 TopBar 1.0 TopBar.qml
-SoundControl 1.0 SoundControl.qml
-BluetoothControl 1.0 BluetoothControl.qml
-NetworkControl 1.0 NetworkControl.qml
-KeyboardLayoutControl 1.0 KeyboardLayoutControl.qml
-AiChatControl 1.0 AiChatControl.qml
-CalendarControl 1.0 CalendarControl.qml
-MediaControl 1.0 MediaControl.qml
-PrivacyIndicators 1.0 PrivacyIndicators.qml
-singleton CodexUsage 1.0 CodexUsage.qml
-CodexUsageControl 1.0 CodexUsageControl.qml
-NotificationControl 1.0 NotificationControl.qml
+singleton BarSettings 1.0 BarSettings.qml
+BarSection 1.0 BarSection.qml

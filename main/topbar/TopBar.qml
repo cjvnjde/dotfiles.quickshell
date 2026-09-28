@@ -1,268 +1,75 @@
 import QtQuick
 import Quickshell
-import Quickshell.Hyprland
-import Quickshell.Services.SystemTray
+import Quickshell.Io
 import ".."
 
 PanelWindow {
     id: root
-
     required property var aiController
     required property var notificationController
-
-    anchors {
-        top: true
-        left: true
-        right: true
-    }
-
+    anchors { top: true; left: true; right: true }
     implicitHeight: Theme.barHeight
-    color: "#40313244"
-
-    readonly property var persistentWorkspaceIds: [1, 2, 3, 4, 5]
-    readonly property var hyprlandMonitor: {
-        Hyprland.monitors.values;
-        return Hyprland.monitorFor(screen);
+    color: Theme.base
+    property var revealed: ({left: false, center: false, right: false})
+    function sectionRevealed(name) { return revealed[name] === true; }
+    function revealSection(name, value) {
+        const next = Object.assign({}, revealed); next[name] = value; revealed = next;
     }
-
-    function workspaceById(workspaceId) {
-        const workspaces = Hyprland.workspaces.values;
-        for (let index = 0; index < workspaces.length; index++) {
-            if (workspaces[index].id === workspaceId) {
-                return workspaces[index];
-            }
-        }
-        return null;
-    }
-
-    function workspaceHasToplevel(workspaceId) {
-        const toplevels = Hyprland.toplevels.values;
-        for (let index = 0; index < toplevels.length; index++) {
-            const workspace = toplevels[index].workspace;
-            if (workspace !== null && workspace.id === workspaceId) {
-                return true;
-            }
-        }
-        return false;
-    }
-
-    function workspaceIdsForMonitor() {
-        const workspaceIds = persistentWorkspaceIds.slice();
-        const workspaces = Hyprland.workspaces.values;
-        for (let index = 0; index < workspaces.length; index++) {
-            const workspace = workspaces[index];
-            if (workspace.id > 0
-                    && workspaceIds.indexOf(workspace.id) === -1
-                    && workspace.monitor === hyprlandMonitor) {
-                workspaceIds.push(workspace.id);
-            }
-        }
-        workspaceIds.sort((left, right) => left - right);
-        return workspaceIds;
-    }
-
-    Component.onCompleted: {
-        Hyprland.refreshMonitors();
-        Hyprland.refreshWorkspaces();
-        Hyprland.refreshToplevels();
-    }
-
-    Connections {
-        target: Hyprland
-
-        function onRawEvent(event) {
-            if (event.name === "movewindowv2") {
-                Hyprland.refreshToplevels();
-            }
+    function toggleSection(name) { revealSection(name, !sectionRevealed(name)); }
+    function revealAt(x) {
+        for (const item of [leftSection, centerSection, rightSection]) {
+            if (x >= item.x - 4 && x <= item.x + item.width + 4) revealSection(item.section, true);
         }
     }
-
+    IpcHandler {
+        target: "bar"
+        function status(): string {
+            return JSON.stringify({revealed: root.revealed, configError: BarSettings.error,
+                moduleErrors: Object.assign({}, leftSection.loadErrors, centerSection.loadErrors, rightSection.loadErrors),
+                sections: {left: leftSection.geometry(), center: centerSection.geometry(), right: rightSection.geometry()},
+                centerAnchor: BarSettings.layout.centerAnchor,
+                anchorX: centerSection.x + centerSection.anchorCenter,
+                width: root.width});
+        }
+        function reload(): void { Quickshell.reload(true); }
+    }
+    HoverHandler {
+        id: barHover
+        blocking: false
+        onPointChanged: if (hovered) root.revealAt(point.position.x)
+        onHoveredChanged: {
+            if (hovered) { fold.stop(); root.revealAt(point.position.x); }
+            else fold.restart();
+        }
+    }
+    Timer {
+        id: fold
+        interval: Theme.hoverDelay
+        onTriggered: if (!barHover.hovered) root.revealed = {left: false, center: false, right: false};
+    }
     Rectangle {
-        anchors {
-            top: parent.top
-            bottom: parent.bottom
-            left: parent.left
-            topMargin: Theme.barTopInset
-            bottomMargin: Theme.barBottomInset
-            leftMargin: Theme.barInset
-        }
-        width: workspaceRow.implicitWidth + Theme.barInset * 2
-        radius: height / 2
-        color: Theme.surface0
-
-        Row {
-            id: workspaceRow
-            anchors.centerIn: parent
-            spacing: 0
-
-            Repeater {
-                model: ScriptModel {
-                    values: root.workspaceIdsForMonitor()
-                }
-
-                Rectangle {
-                    required property int modelData
-
-                    readonly property int workspaceId: modelData
-                    readonly property var workspace: root.workspaceById(workspaceId)
-                    readonly property bool active: root.hyprlandMonitor !== null
-                        && root.hyprlandMonitor.activeWorkspace !== null
-                        && root.hyprlandMonitor.activeWorkspace.id === workspaceId
-                    readonly property bool urgent: workspace !== null
-                        && workspace.urgent
-                    readonly property bool occupied:
-                        root.workspaceHasToplevel(workspaceId)
-
-                    width: 22
-                    height: workspaceRow.parent.height
-                    radius: height / 2
-                    color: urgent
-                        ? Theme.red
-                        : workspaceMouse.containsMouse ? Theme.surface1 : "transparent"
-
-                    Text {
-                        anchors.centerIn: parent
-                        text: String(parent.workspaceId)
-                        color: parent.urgent
-                            ? Theme.base
-                            : parent.active ? Theme.sky : Theme.lavender
-                        font.family: Theme.fontFamily
-                        font.pixelSize: Theme.fontSize
-                    }
-
-                    Rectangle {
-                        anchors {
-                            top: parent.top
-                            right: parent.right
-                            topMargin: 3
-                            rightMargin: 3
-                        }
-                        visible: parent.occupied
-                        width: 4
-                        height: 4
-                        radius: width / 2
-                        color: parent.urgent ? Theme.base : Theme.green
-                    }
-
-                    MouseArea {
-                        id: workspaceMouse
-                        anchors.fill: parent
-                        hoverEnabled: true
-                        onClicked: {
-                            if (parent.workspace !== null) {
-                                parent.workspace.activate();
-                            } else if (Hyprland.usingLua) {
-                                Hyprland.dispatch(
-                                    "hl.dsp.focus({ workspace = "
-                                        + parent.workspaceId + " })");
-                            } else {
-                                Hyprland.dispatch("workspace " + parent.workspaceId);
-                            }
-                        }
-                    }
-                }
-            }
-        }
+        anchors { left: parent.left; right: parent.right; bottom: parent.bottom }
+        height: 1; color: Theme.surface0; opacity: 0.5
     }
-
-    Text {
-        anchors.centerIn: parent
-        width: Math.min(implicitWidth, parent.width * 0.4)
-        text: Hyprland.activeToplevel ? Hyprland.activeToplevel.title : ""
-        color: Theme.text
-        elide: Text.ElideRight
-        horizontalAlignment: Text.AlignHCenter
-        font.family: Theme.fontFamily
-        font.pixelSize: Theme.fontSize
+    BarSection {
+        id: leftSection
+        bar: root; section: "left"; entries: BarSettings.layout.left
+        revealed: root.sectionRevealed(section)
+        x: Theme.barMargin; y: 2; height: root.height - 4
     }
-
-    Row {
-        anchors {
-            top: parent.top
-            bottom: parent.bottom
-            right: parent.right
-            topMargin: Theme.barTopInset
-            bottomMargin: Theme.barBottomInset
-            rightMargin: Theme.barInset
-        }
-        spacing: 2
-
-        PrivacyIndicators {}
-
-        MediaControl {}
-
-        SoundControl {}
-
-        BluetoothControl {}
-
-        NetworkControl {}
-
-        KeyboardLayoutControl {}
-        NotificationControl {
-            controller: root.notificationController
-            targetScreen: root.screen
-        }
-
-        ThemeControl {}
-
-        CodexUsageControl {}
-
-        AiChatControl {
-            visible: Quickshell.env("QUICKSHELL_AI_AUTOSTART") !== "0"
-            controller: root.aiController
-        }
-
-
-        Rectangle {
-            visible: SystemTray.items.values.length > 0
-            width: visible ? trayRow.implicitWidth + Theme.controlHorizontalPadding * 2 : 0
-            height: parent.height
-            radius: height / 2
-            color: Theme.surface0
-
-            Row {
-                id: trayRow
-                anchors.centerIn: parent
-                spacing: 6
-
-                Repeater {
-                    model: SystemTray.items
-
-                    Item {
-                        required property var modelData
-
-                        width: 14
-                        height: 20
-
-                        Image {
-                            anchors.centerIn: parent
-                            width: 14
-                            height: 14
-                            source: modelData.icon
-                            sourceSize: Qt.size(width, height)
-                            fillMode: Image.PreserveAspectFit
-                        }
-
-                        MouseArea {
-                            id: trayMouse
-                            anchors.fill: parent
-                            acceptedButtons: Qt.LeftButton | Qt.RightButton
-
-                            onClicked: mouse => {
-                                if (mouse.button === Qt.RightButton && modelData.hasMenu) {
-                                    const position = root.mapFromItem(trayMouse, mouse.x, mouse.y);
-                                    modelData.display(root, position.x, position.y);
-                                    return;
-                                }
-
-                                modelData.activate();
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
-        CalendarControl {}
+    BarSection {
+        id: centerSection
+        bar: root; section: "center"; entries: BarSettings.layout.center
+        anchorId: BarSettings.layout.centerAnchor
+        revealed: root.sectionRevealed(section)
+        x: root.width / 2 - anchorCenter
+        y: 2; height: root.height - 4
+    }
+    BarSection {
+        id: rightSection
+        bar: root; section: "right"; entries: BarSettings.layout.right
+        revealed: root.sectionRevealed(section)
+        x: root.width - width - Theme.barMargin
+        y: 2; height: root.height - 4
     }
 }

@@ -1,0 +1,80 @@
+{
+  "version": 1,
+  "centerAnchor": "clock",
+  "left": [
+    {
+      "id": "workspaces",
+      "settings": {
+        "persistent": [
+          1,
+          2,
+          3,
+          4,
+          5
+        ]
+      }
+    }
+  ],
+  "center": [
+    {
+      "id": "dnd",
+      "reveal": "hover"
+    },
+    {
+      "id": "screenshot",
+      "reveal": "hover"
+    },
+    {
+      "id": "recording",
+      "reveal": "hover"
+    },
+    {
+      "id": "clock",
+      "settings": {
+        "format": "ddd  HH:mm"
+      }
+    },
+    {
+      "id": "keyboard"
+    },
+    {
+      "id": "weather"
+    },
+    {
+      "id": "media"
+    }
+  ],
+  "right": [
+    {
+      "id": "appearance",
+      "reveal": "hover"
+    },
+    {
+      "id": "bluetooth",
+      "reveal": "hover"
+    },
+    {
+      "id": "tray",
+      "reveal": "hover"
+    },
+    {
+      "id": "agent-usage",
+      "reveal": "hover"
+    },
+    {
+      "id": "drawer"
+    },
+    {
+      "id": "privacy"
+    },
+    {
+      "id": "audio"
+    },
+    {
+      "id": "network"
+    },
+    {
+      "id": "ai-chat"
+    }
+  ]
+}

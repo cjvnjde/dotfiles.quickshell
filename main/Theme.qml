@@ -22,7 +22,25 @@ QtObject {
     readonly property color peach: dark ? "#fab387" : "#fe640b"
     readonly property color mauve: dark ? "#cba6f7" : "#8839ef"
 
-    readonly property int barHeight: 24
+    readonly property int fontCaption: 10
+    readonly property int fontTitle: 14
+    readonly property int fontLarge: 16
+    readonly property int fontIcon: 18
+    readonly property int fontDisplay: 26
+    readonly property int fontHero: 30
+    readonly property int fontWeatherIcon: 40
+    readonly property string notificationFontFamily: "Liberation Sans"
+    readonly property int inputHeight: 36
+    readonly property int inputPadding: 12
+    readonly property int inputRadius: 5
+    readonly property int buttonRadius: 5
+    readonly property int panelPadding: 16
+    readonly property int panelRadius: 8
+    readonly property int barMargin: 10
+    readonly property int barItemGap: 3
+    readonly property int hoverDelay: 280
+    readonly property int animationDuration: 160
+    readonly property int barHeight: 32
     readonly property int barInset: 1
     readonly property int barTopInset: 2
     readonly property int barBottomInset: 1

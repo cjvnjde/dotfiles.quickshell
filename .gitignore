@@ -1,1 +1,5 @@
 /main/ai-chat/local/
+
+# Python helper/test bytecode
+__pycache__/
+*.py[cod]

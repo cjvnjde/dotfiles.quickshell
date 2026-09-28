@@ -1,4 +1,5 @@
 import QtQuick
+import "components"
 import Quickshell
 import Quickshell.Io
 import Quickshell.Wayland
@@ -367,7 +368,7 @@ Scope {
                     font.pixelSize: 16
                 }
 
-                TextInput {
+                InputField {
                     id: searchInput
                     objectName: "launcherSearchInput"
 
@@ -385,12 +386,11 @@ Scope {
                     font.family: Theme.fontFamily
                     font.pixelSize: 14
 
-                    Text {
-                        visible: searchInput.text.length === 0
-                        text: "Search…"
-                        color: Theme.overlay0
-                        font: searchInput.font
-                    }
+                    background: null
+                    leftPadding: 0
+                    rightPadding: 0
+                    placeholderText: "Search…"
+                    height: parent.height
 
                     Keys.onPressed: event => {
                         if (event.key === Qt.Key_Escape) {
