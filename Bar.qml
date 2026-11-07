@@ -19,6 +19,9 @@ PanelWindow {
     readonly property color lavender: "#b4befe"
     readonly property string fontFamily: "FiraCode Nerd Font"
     property bool calendarOpen: false
+    property bool audioOpen: false
+    readonly property int volume: Math.round((privacy.sink?.audio?.volume ?? 0) * 100)
+    readonly property string volumeIcon: privacy.muted ? "\uf6a9" : (volume > 50 ? "\uf028" : "\uf027")
 
     anchors { top: true; left: true; right: true }
     implicitHeight: 24
@@ -28,7 +31,7 @@ PanelWindow {
     exclusiveZone: 0
     // Only change stacking, never geometry or the reserved area.
     // An explicitly opened calendar remains usable above application windows.
-    WlrLayershell.layer: specialOpen && !calendarOpen ? WlrLayer.Bottom : WlrLayer.Top
+    WlrLayershell.layer: specialOpen && !calendarOpen && !audioOpen ? WlrLayer.Bottom : WlrLayer.Top
     Connections {
         target: Hyprland
         function onRawEvent(event) {
@@ -137,6 +140,46 @@ PanelWindow {
         }
 
         Rectangle {
+            id: audioIsland
+            width: audioLabel.width + 16
+            height: 20
+            radius: 6
+            color: bar.audioOpen || audioMouse.containsMouse ? bar.surface : bar.base
+            Text {
+                id: audioLabel
+                anchors.centerIn: parent
+                text: bar.volumeIcon + " " + (bar.privacy.sink ? bar.volume + "%" : "—")
+                color: bar.privacy.muted ? "#f9e2af" : bar.foreground
+                font { family: bar.fontFamily; pixelSize: 12 }
+            }
+            ToolTip.visible: audioMouse.containsMouse && !bar.audioOpen
+            ToolTip.text: "Sound · Click for controls · Scroll for volume · Middle-click to mute"
+            MouseArea {
+                id: audioMouse
+                anchors.fill: parent
+                hoverEnabled: true
+                cursorShape: Qt.PointingHandCursor
+                acceptedButtons: Qt.LeftButton | Qt.MiddleButton
+                onClicked: mouse => {
+                    if (mouse.button === Qt.MiddleButton) {
+                        if (bar.privacy.sink?.audio)
+                            bar.privacy.sink.audio.muted = !bar.privacy.sink.audio.muted;
+                    } else {
+                        bar.calendarOpen = false;
+                        bar.audioOpen = !bar.audioOpen;
+                    }
+                }
+                onWheel: wheel => {
+                    const delta = wheel.angleDelta.y || wheel.pixelDelta.y;
+                    if (bar.privacy.sink?.audio && delta !== 0)
+                        bar.privacy.sink.audio.volume = Math.max(0, Math.min(1,
+                            bar.privacy.sink.audio.volume + (delta > 0 ? 0.05 : -0.05)));
+                    wheel.accepted = true;
+                }
+            }
+        }
+
+        Rectangle {
             id: clockIsland
             width: clockLabel.width + 12
             height: 20
@@ -154,9 +197,20 @@ PanelWindow {
                 anchors.fill: parent
                 hoverEnabled: true
                 cursorShape: Qt.PointingHandCursor
-                onClicked: bar.calendarOpen = !bar.calendarOpen
+                onClicked: {
+                    bar.audioOpen = false;
+                    bar.calendarOpen = !bar.calendarOpen;
+                }
             }
         }
+    }
+
+    AudioPopup {
+        anchor.item: audioIsland
+        anchor.rect.y: audioIsland.height + 4
+        anchor.rect.x: audioIsland.width - width
+        visible: bar.audioOpen
+        onDismissed: bar.audioOpen = false
     }
 
     SystemClock { id: clock; precision: SystemClock.Minutes }

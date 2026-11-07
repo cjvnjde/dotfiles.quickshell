@@ -8,9 +8,11 @@ so `shell.qml` is the default config: run it with plain `qs`.
 | `shell.qml` | Entry point: wallpaper and bar on each monitor, plus the launcher |
 | `Wallpaper.qml` | Desktop background: shows `wallpaper.jpg` on every monitor |
 | `wallpaper.jpg` | The background image (replace it to change the wallpaper) |
-| `Bar.qml` | Transparent Catppuccin Mocha island bar: fixed workspaces 1–5, privacy badges, 12-hour clock |
+| `Bar.qml` | Transparent Catppuccin Mocha island bar: fixed workspaces 1–5, privacy badges, sound controls, 12-hour clock |
 | `CalendarPopup.qml` | Click-clock calendar: opens at this month with today selected; month navigation and Today reset |
 | `PrivacyState.qml` | Shared PipeWire activity probe and default speaker/microphone mute state |
+| `AudioPopup.qml` | Sound popup with output/input controls and a full-mixer shortcut |
+| `AudioControl.qml` | PipeWire volume slider, mute button, and device picker |
 | `Launcher.qml` | App launcher: type to filter, arrows to move, Enter to open, Esc to close |
 
 Open the launcher with `qs ipc call launcher toggle` (Super+T in Hyprland).
@@ -23,13 +25,20 @@ The bar is 24 logical pixels high (20-pixel islands), with a constant zero
 exclusive zone. Hyprland's normal tiled workspaces use a fixed 24-pixel top gap;
 scratchpads and Quake-style terminals override that gap to start at the screen
 edge. While a special workspace is open, the bar sits behind windows but remains
-visible wherever uncovered; opening the calendar temporarily raises it. Only
+visible wherever uncovered; opening the calendar or sound controls temporarily raises it. Only
 stacking changes, never monitor reservations or background workspace geometry.
 
 Click workspace numbers to switch; the active workspace is highlighted per monitor.
 Special workspaces and scratchpads never appear. Existing workspace 6–10 shortcuts
 are unchanged. Click the clock to open the calendar; click outside or press Escape
 to close it. Select any day, browse months, or click Today to reset.
+
+The sound island beside the clock always shows output volume. Click it for speaker
+and microphone volume sliders, mute buttons, and default-device selection. Scroll
+over the island to change output volume in 5% steps; middle-click to toggle speaker
+mute. Sliders and scrolling are capped at 100%. Click **Mixer ↗** for
+`pavucontrol`, including per-application controls. Outside click or Escape closes
+the popup. Volume and mute state follow PipeWire changes, including keyboard shortcuts.
 
 Status badges appear only for camera/microphone use, screen capture/sharing, or
 speaker/microphone mute. Hyprland's Super+M toggles **speaker** mute. Activity is
