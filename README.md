@@ -8,7 +8,7 @@ so `shell.qml` is the default config: run it with plain `qs`.
 | `shell.qml` | Entry point: wallpaper and bar on each monitor, plus the launcher |
 | `Wallpaper.qml` | Desktop background: shows `wallpaper.jpg` on every monitor |
 | `wallpaper.jpg` | The background image (replace it to change the wallpaper) |
-| `Bar.qml` | Transparent Catppuccin Mocha island bar: fixed workspaces 1–5, Bluetooth/privacy badges, sound controls, 12-hour clock |
+| `Bar.qml` | Transparent Catppuccin Mocha island bar: fixed workspaces 1–5 plus higher workspaces on demand, Bluetooth/privacy badges, sound controls, 12-hour clock |
 | `CalendarPopup.qml` | Click-clock calendar: opens at this month with today selected; month navigation and Today reset |
 | `PrivacyState.qml` | Shared PipeWire activity probe and default speaker/microphone mute state |
 | `AudioPopup.qml` | Sound popup with output/input controls and a full-mixer shortcut |
@@ -32,14 +32,15 @@ Arrow keys and PageUp/PageDown wrap through results, including short lists.
 
 The bar is 24 logical pixels high (20-pixel islands), with a constant zero
 exclusive zone. Hyprland's normal tiled workspaces use a fixed 24-pixel top gap;
-scratchpads and Quake-style terminals override that gap to start at the screen
-edge. While a special workspace is open, the bar sits behind windows but remains
+scratchpads add a 12-pixel margin below the bar and along the other edges.
+Quake-style terminals still start at the screen edge. While a special workspace is open, the bar sits behind windows but remains
 visible wherever uncovered; opening the calendar or sound controls temporarily raises it. Only
 stacking changes, never monitor reservations or background workspace geometry.
 
 Click workspace numbers to switch; the active workspace is highlighted per monitor.
-Special workspaces and scratchpads never appear. Existing workspace 6–10 shortcuts
-are unchanged. Click the clock to open the calendar; click outside or press Escape
+Workspaces 1–5 are always shown; higher numbered workspaces appear while they
+exist and disappear when Hyprland removes them after they become empty and inactive.
+Special workspaces and scratchpads never appear. Click the clock to open the calendar; click outside or press Escape
 to close it. Select any day, browse months, or click Today to reset.
 
 The sound island beside the clock always shows output volume. Click it for speaker

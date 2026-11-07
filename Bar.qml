@@ -28,7 +28,7 @@ PanelWindow {
     anchors { top: true; left: true; right: true }
     implicitHeight: 24
     color: "transparent"
-    // Normal workspace gaps provide a fixed inset; special workspaces use none.
+    // Hyprland gaps provide the bar inset; only Quake consoles start at the edge.
     // Never change monitor reservations when a scratchpad or console is toggled.
     exclusiveZone: 0
     // Only change stacking, never geometry or the reserved area.
@@ -61,11 +61,20 @@ PanelWindow {
             anchors.centerIn: parent
             spacing: 1
             Repeater {
-                model: 5
+                // Always show 1–5; add higher workspaces only while they exist.
+                model: {
+                    const numbers = new Set([1, 2, 3, 4, 5]);
+                    for (const ws of Hyprland.workspaces.values) {
+                        if (ws.id > 5) numbers.add(ws.id);
+                    }
+                    const active = bar.monitor?.activeWorkspace?.id;
+                    if (active > 5) numbers.add(active);
+                    return Array.from(numbers).sort((a, b) => a - b);
+                }
                 Rectangle {
                     id: workspace
-                    required property int index
-                    readonly property int number: index + 1
+                    required property int modelData
+                    readonly property int number: modelData
                     readonly property bool active: bar.monitor?.activeWorkspace?.id === number
                     width: 20
                     height: 16
