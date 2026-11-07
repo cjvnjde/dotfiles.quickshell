@@ -3,6 +3,7 @@ pragma ComponentBehavior: Bound
 import QtQuick
 import QtQuick.Controls
 import Quickshell
+import Quickshell.Bluetooth
 import Quickshell.Hyprland
 import Quickshell.Wayland
 
@@ -22,6 +23,7 @@ PanelWindow {
     property bool audioOpen: false
     readonly property int volume: Math.round((privacy.sink?.audio?.volume ?? 0) * 100)
     readonly property string volumeIcon: privacy.muted ? "\uf466" : (volume > 50 ? "\uf028" : "\uf027")
+    readonly property bool bluetoothConnected: Bluetooth.devices.values.some(device => device.connected)
 
     anchors { top: true; left: true; right: true }
     implicitHeight: 24
@@ -112,6 +114,7 @@ PanelWindow {
                 spacing: 8
                 Repeater {
                     model: [
+                        { show: bar.bluetoothConnected, icon: "\uf294", label: "Bluetooth connected", tint: "#89b4fa" },
                         { show: bar.privacy.cameraActive, icon: "\uf030", label: "Camera in use", tint: "#a6e3a1" },
                         { show: bar.privacy.microphoneActive, icon: "\uf130", label: "Microphone in use", tint: "#a6e3a1" },
                         { show: bar.privacy.screenActive, icon: "\uf108", label: "Screen sharing / capture", tint: "#fab387" },

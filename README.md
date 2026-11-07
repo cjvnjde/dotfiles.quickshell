@@ -8,7 +8,7 @@ so `shell.qml` is the default config: run it with plain `qs`.
 | `shell.qml` | Entry point: wallpaper and bar on each monitor, plus the launcher |
 | `Wallpaper.qml` | Desktop background: shows `wallpaper.jpg` on every monitor |
 | `wallpaper.jpg` | The background image (replace it to change the wallpaper) |
-| `Bar.qml` | Transparent Catppuccin Mocha island bar: fixed workspaces 1–5, privacy badges, sound controls, 12-hour clock |
+| `Bar.qml` | Transparent Catppuccin Mocha island bar: fixed workspaces 1–5, Bluetooth/privacy badges, sound controls, 12-hour clock |
 | `CalendarPopup.qml` | Click-clock calendar: opens at this month with today selected; month navigation and Today reset |
 | `PrivacyState.qml` | Shared PipeWire activity probe and default speaker/microphone mute state |
 | `AudioPopup.qml` | Sound popup with output/input controls and a full-mixer shortcut |
@@ -53,7 +53,10 @@ Quickshell 0.3.2 does not expose volume controls for nodes classified as
 `Audio/Source/Virtual` (including some EasyEffects sources). Use **Mixer ↗**
 for devices unavailable in this picker.
 
-Status badges appear only for camera/microphone use, screen capture/sharing, or
+A blue Bluetooth icon appears only while at least one Bluetooth device is connected,
+and disappears when the last device disconnects. Connection state updates automatically.
+
+Other status badges appear only for camera/microphone use, screen capture/sharing, or
 speaker/microphone mute. Hyprland's Super+M toggles **microphone** mute. Activity is
 sampled every two seconds using `pw-dump`; mute state is event-driven. Microphone
 activity follows active source links, including effects/filter clients, independently
