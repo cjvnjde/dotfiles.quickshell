@@ -26,19 +26,19 @@ Scope {
                 try {
                     const graph = JSON.parse(text);
                     const nodes = graph.filter(o => o.type === "PipeWire:Interface:Node");
+                    const activeLinks = graph.filter(o => o.type === "PipeWire:Interface:Link"
+                        && o.info?.state === "active");
                     let mic = false, camera = false, screen = false;
                     for (const node of nodes) {
                         const info = node.info || {};
                         const p = info.props || {};
                         if (info.state !== "running") continue;
                         const cls = p["media.class"] || "";
-                        if (cls === "Stream/Input/Audio") {
-                            // Ignore speaker-monitor recordings: those are not microphone use.
-                            const links = graph.filter(o => o.type === "PipeWire:Interface:Link"
-                                && Number(o.info?.["input-node-id"]) === node.id);
-                            mic = mic || links.some(link => nodes.some(n =>
-                                n.id === Number(link.info?.["output-node-id"])
-                                && n.info?.props?.["media.class"] === "Audio/Source"));
+                        if (cls === "Audio/Source") {
+                            // Follow capture at the source: effects and JACK clients need
+                            // not expose a Stream/Input/Audio node. Sink monitors do not count.
+                            mic = mic || activeLinks.some(link =>
+                                Number(link.info["output-node-id"]) === node.id);
                         }
                         if (cls !== "Video/Source") continue;
                         const identity = [p["node.name"], p["media.name"], p["media.role"],

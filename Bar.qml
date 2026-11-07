@@ -21,7 +21,7 @@ PanelWindow {
     property bool calendarOpen: false
     property bool audioOpen: false
     readonly property int volume: Math.round((privacy.sink?.audio?.volume ?? 0) * 100)
-    readonly property string volumeIcon: privacy.muted ? "\uf6a9" : (volume > 50 ? "\uf028" : "\uf027")
+    readonly property string volumeIcon: privacy.muted ? "\uf466" : (volume > 50 ? "\uf028" : "\uf027")
 
     anchors { top: true; left: true; right: true }
     implicitHeight: 24
@@ -113,10 +113,10 @@ PanelWindow {
                 Repeater {
                     model: [
                         { show: bar.privacy.cameraActive, icon: "\uf030", label: "Camera in use", tint: "#a6e3a1" },
-                        { show: bar.privacy.microphoneActive && !bar.privacy.microphoneMuted, icon: "\uf130", label: "Microphone in use", tint: "#a6e3a1" },
+                        { show: bar.privacy.microphoneActive, icon: "\uf130", label: "Microphone in use", tint: "#a6e3a1" },
                         { show: bar.privacy.screenActive, icon: "\uf108", label: "Screen sharing / capture", tint: "#fab387" },
-                        { show: bar.privacy.microphoneMuted, icon: "\uf131", label: "Microphone muted", tint: "#f38ba8" },
-                        { show: bar.privacy.muted, icon: "\uf6a9", label: "Speakers muted · Super+M", tint: "#f9e2af" }
+                        { show: bar.privacy.microphoneMuted, icon: "\uf131", label: "Microphone muted · Super+M", tint: "#f38ba8" },
+                        { show: bar.privacy.muted, icon: "\uf466", label: "Speakers muted", tint: "#f9e2af" }
                     ]
                     Text {
                         id: badge

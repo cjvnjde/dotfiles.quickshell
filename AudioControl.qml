@@ -24,7 +24,7 @@ Column {
             enabled: control.available
             text: control.input
                 ? (control.node?.audio?.muted ? "\uf131" : "\uf130")
-                : (control.node?.audio?.muted ? "\uf6a9" : "\uf028")
+                : (control.node?.audio?.muted ? "\uf466" : "\uf028")
             background: Rectangle {
                 radius: 4
                 color: muteButton.hovered ? "#313244" : "transparent"

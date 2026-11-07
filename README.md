@@ -14,10 +14,19 @@ so `shell.qml` is the default config: run it with plain `qs`.
 | `AudioPopup.qml` | Sound popup with output/input controls and a full-mixer shortcut |
 | `AudioControl.qml` | PipeWire volume slider, mute button, and device picker |
 | `Launcher.qml` | App launcher: type to filter, arrows to move, Enter to open, Esc to close |
+| `LauncherSearch.js` | Fuzzy matching, result ranking, and usage weighting |
 
-Open the launcher with `qs ipc call launcher toggle` (Super+T in Hyprland).
+Open the launcher with `qs ipc call launcher toggle` (Super+Space in Hyprland).
 
 For editor support (qmlls), create an empty `.qmlls.ini` here; Quickshell fills it in on start.
+
+## Launcher
+
+Search applications or executables in PATH. Command arguments run in Ghostty;
+known commands such as `git log` take precedence over automatic calculator detection.
+With `qalc` installed, use `= expression`, `calc expression`, or a trailing `=`
+to request calculation explicitly. Enter copies the current result.
+Arrow keys and PageUp/PageDown wrap through results, including short lists.
 
 ## Bar
 
@@ -40,11 +49,17 @@ mute. Sliders and scrolling are capped at 100%. Click **Mixer ↗** for
 `pavucontrol`, including per-application controls. Outside click or Escape closes
 the popup. Volume and mute state follow PipeWire changes, including keyboard shortcuts.
 
+Quickshell 0.3.2 does not expose volume controls for nodes classified as
+`Audio/Source/Virtual` (including some EasyEffects sources). Use **Mixer ↗**
+for devices unavailable in this picker.
+
 Status badges appear only for camera/microphone use, screen capture/sharing, or
-speaker/microphone mute. Hyprland's Super+M toggles **speaker** mute. Activity is
-sampled every two seconds using `pw-dump`; mute state is event-driven. Indicators
-only cover recognizable PipeWire streams, not direct V4L2 camera access or capture
-that bypasses PipeWire. They are convenience indicators, not a security guarantee.
+speaker/microphone mute. Hyprland's Super+M toggles **microphone** mute. Activity is
+sampled every two seconds using `pw-dump`; mute state is event-driven. Microphone
+activity follows active source links, including effects/filter clients, independently
+of default-device mute. Speaker-monitor recordings and inactive links do not count.
+Indicators only cover recognizable PipeWire streams, not direct V4L2 camera access
+or capture that bypasses PipeWire. They are convenience indicators, not a security guarantee.
 
 ## Setup
 

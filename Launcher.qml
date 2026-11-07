@@ -41,10 +41,11 @@ Scope {
         }
     ] : []
     readonly property var filteredResults: filterResults(query, cliCommands, history.entries)
+    readonly property string calculationExpression: calculatorExpression(query)
     property string calculationResult: ""
     property string calculationResultExpression: ""
     readonly property bool calculationResultCurrent: calculationResultExpression.length > 0
-        && calculationResultExpression === calculatorExpression(query)
+        && calculationResultExpression === calculationExpression
     property string pendingCalculation: ""
     property string runningCalculation: ""
 
@@ -93,6 +94,10 @@ Scope {
             expression = expression.slice(0, -1).trim();
         }
 
+        // A known executable takes precedence over automatic math detection.
+        if (!explicit && cliCommands.indexOf(expression.split(/\s+/, 1)[0]) !== -1)
+            return "";
+
         const hasNumberOperation = /\d/.test(expression) && /[+\-*/%^!×÷()]/.test(expression);
         const hasMathName = /\b(?:abs|acos|asin|atan|ceil|cos|exp|floor|ln|log|max|min|pi|pow|round|sin|sqrt|tan)\b/i.test(expression);
         return expression.length > 0 && (explicit || hasNumberOperation || hasMathName)
@@ -101,7 +106,7 @@ Scope {
     }
 
     function startPendingCalculation() {
-        if (pendingCalculation.length === 0) {
+        if (pendingCalculation.length === 0 || calculationTimer.running || calculatorProcess.running) {
             return;
         }
 
@@ -148,7 +153,7 @@ Scope {
             return;
         }
 
-        selectedIndex = (selectedIndex + offset + count) % count;
+        selectedIndex = ((selectedIndex + offset) % count + count) % count;
         applicationList.positionViewAtIndex(selectedIndex, ListView.Contain);
     }
 
@@ -185,7 +190,10 @@ Scope {
     onQueryChanged: {
         selectedIndex = 0;
         applicationList.positionViewAtBeginning();
-        pendingCalculation = calculatorExpression(query);
+    }
+
+    onCalculationExpressionChanged: {
+        pendingCalculation = calculationExpression;
 
         if (pendingCalculation.length === 0) {
             calculationTimer.stop();
@@ -225,7 +233,7 @@ Scope {
         command: [
             "bash",
             "-lc",
-            "IFS=:; for directory in $PATH; do [[ -d \"$directory\" ]] || continue; for executable in \"$directory\"/*; do [[ -f \"$executable\" && -x \"$executable\" ]] && printf '%s\\n' \"${executable##*/}\"; done; done"
+            "IFS=:; for directory in $PATH; do [[ -d \"$directory\" ]] || continue; for executable in \"$directory\"/*; do if [[ -f \"$executable\" && -x \"$executable\" ]]; then printf '%s\\n' \"${executable##*/}\"; fi; done; done"
         ]
 
         stdout: StdioCollector {
@@ -278,7 +286,7 @@ Scope {
     Process {
         id: calculatorProcess
 
-        command: ["qalc", "--terse", "--set", "color 0", root.runningCalculation]
+        command: ["qalc", "--terse", "--set", "color 0", "--", root.runningCalculation]
 
         stdout: StdioCollector {
             id: calculatorOutput
@@ -291,7 +299,7 @@ Scope {
             const output = calculatorOutput.text.trim();
             root.runningCalculation = "";
 
-            if (expression === root.calculatorExpression(root.query)) {
+            if (expression === root.calculationExpression) {
                 if (exitCode === 0
                         && output.length > 0
                         && !output.toLowerCase().startsWith("error:")) {
@@ -527,7 +535,7 @@ Scope {
                     required property var modelData
                     required property int index
 
-                    readonly property bool selected: root.calculationResult.length === 0 && index === root.selectedIndex
+                    readonly property bool selected: !(root.calculationResultCurrent && root.calculationResult.length > 0) && index === root.selectedIndex
                     readonly property bool isCommand: modelData.kind === "command"
                     readonly property bool hovered: appMouse.containsMouse
 
