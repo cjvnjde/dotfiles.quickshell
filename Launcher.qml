@@ -126,6 +126,9 @@ Scope {
 
     function show() {
         calculatorProbe.running = true;
+        // Refresh in the background so newly installed commands appear.
+        if (!commandIndexer.running)
+            commandIndexer.running = true;
         query = "";
         selectedIndex = 0;
         shown = true;
@@ -157,9 +160,11 @@ Scope {
         applicationList.positionViewAtIndex(selectedIndex, ListView.Contain);
     }
 
-    function launchInTerminal(command, workingDirectory) {
+    // keepOpen: leave the window open after the command exits, so its output stays readable.
+    function launchInTerminal(command, workingDirectory, keepOpen) {
+        const terminal = keepOpen ? ["ghostty", "--wait-after-command=true", "-e"] : ["ghostty", "-e"];
         Quickshell.execDetached({
-            command: ["ghostty", "-e"].concat(command),
+            command: terminal.concat(command),
             workingDirectory: workingDirectory || ""
         });
     }
@@ -181,9 +186,9 @@ Scope {
                 result.application.execute();
             }
         } else if (result.commandLine) {
-            launchInTerminal(["bash", "-lc", result.commandLine], "");
+            launchInTerminal(["bash", "-lc", result.commandLine], "", true);
         } else {
-            launchInTerminal([result.command], "");
+            launchInTerminal([result.command], "", true);
         }
     }
 

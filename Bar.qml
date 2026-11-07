@@ -1,7 +1,6 @@
 pragma ComponentBehavior: Bound
 
 import QtQuick
-import QtQuick.Controls
 import Quickshell
 import Quickshell.Bluetooth
 import Quickshell.Hyprland
@@ -139,12 +138,16 @@ PanelWindow {
                         height: 20
                         verticalAlignment: Text.AlignVCenter
                         font { family: bar.fontFamily; pixelSize: 12 }
-                        ToolTip.visible: badgeMouse.containsMouse
-                        ToolTip.text: modelData.label
+                        Accessible.name: modelData.label
                         MouseArea {
                             id: badgeMouse
                             anchors.fill: parent
                             hoverEnabled: true
+                        }
+                        BarTooltip {
+                            target: badge
+                            text: badge.modelData.label
+                            shown: badgeMouse.containsMouse
                         }
                     }
                 }
@@ -164,8 +167,11 @@ PanelWindow {
                 color: bar.privacy.muted ? "#f9e2af" : bar.foreground
                 font { family: bar.fontFamily; pixelSize: 12 }
             }
-            ToolTip.visible: audioMouse.containsMouse && !bar.audioOpen
-            ToolTip.text: "Sound · Click for controls · Scroll for volume · Middle-click to mute"
+            BarTooltip {
+                target: audioIsland
+                text: "Sound · Click for controls · Scroll for volume · Middle-click to mute"
+                shown: audioMouse.containsMouse && !bar.audioOpen
+            }
             MouseArea {
                 id: audioMouse
                 anchors.fill: parent

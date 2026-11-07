@@ -8,6 +8,7 @@ so `shell.qml` is the default config: run it with plain `qs`.
 | `shell.qml` | Entry point: wallpaper and bar on each monitor, plus the launcher |
 | `Wallpaper.qml` | Desktop background: shows `wallpaper.jpg` on every monitor |
 | `wallpaper.jpg` | The background image (replace it to change the wallpaper) |
+| `BarTooltip.qml` | Hover hints for bar items (own popup, not clipped by the 24px bar) |
 | `Bar.qml` | Transparent Catppuccin Mocha island bar: fixed workspaces 1–5 plus higher workspaces on demand, Bluetooth/privacy badges, sound controls, 12-hour clock |
 | `CalendarPopup.qml` | Click-clock calendar: opens at this month with today selected; month navigation and Today reset |
 | `PrivacyState.qml` | Shared PipeWire activity probe and default speaker/microphone mute state |
@@ -22,7 +23,9 @@ For editor support (qmlls), create an empty `.qmlls.ini` here; Quickshell fills 
 
 ## Launcher
 
-Search applications or executables in PATH. Command arguments run in Ghostty;
+Search applications or executables in PATH. Commands run in Ghostty, and the
+window stays open after they exit so the output can be read (press a key to close).
+The command list refreshes each time the launcher opens. Command arguments run in Ghostty;
 known commands such as `git log` take precedence over automatic calculator detection.
 With `qalc` installed, use `= expression`, `calc expression`, or a trailing `=`
 to request calculation explicitly. Enter copies the current result.
