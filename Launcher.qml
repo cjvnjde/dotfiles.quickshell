@@ -16,7 +16,7 @@ Scope {
     property var cliCommands: []
     property bool calculatorAvailable: false
 
-    // Launcher-local palette: no dependency on the previous shell's theme.
+    // Catppuccin Mocha palette.
     readonly property var theme: QtObject {
         readonly property color base: "#1e1e2e"
         readonly property color mantle: "#181825"
@@ -362,8 +362,6 @@ Scope {
             height: Math.min(436, parent.height - 96)
             radius: 4
             color: root.theme.base
-            border.width: 1
-            border.color: root.theme.lavender
 
             MouseArea {
                 anchors.fill: parent
@@ -382,8 +380,6 @@ Scope {
                 height: 42
                 radius: 4
                 color: root.theme.mantle
-                border.width: 1
-                border.color: searchInput.activeFocus ? root.theme.blue : root.theme.surface1
 
                 Text {
                     anchors {
@@ -522,6 +518,8 @@ Scope {
                 spacing: 2
                 model: root.filteredResults
                 boundsBehavior: Flickable.StopAtBounds
+                highlightMoveDuration: 0
+                highlightResizeDuration: 0
 
                 delegate: Rectangle {
                     id: applicationRow
@@ -572,9 +570,7 @@ Scope {
                             height: 20
                             visible: themedIcon.status !== Image.Ready
                             radius: 3
-                            color: "transparent"
-                            border.width: 1
-                            border.color: root.theme.subtext0
+                            color: root.theme.surface0
 
                             Rectangle {
                                 anchors {

@@ -28,7 +28,7 @@ PanelWindow {
                 id: ws
                 required property var modelData
                 text: modelData.name
-                color: Hyprland.focusedWorkspace === modelData ? "#ffffff" : "#6c7086"
+                color: Hyprland.focusedWorkspace === modelData ? "#b4befe" : "#6c7086"
                 font.pixelSize: 14
 
                 MouseArea {
@@ -50,7 +50,7 @@ PanelWindow {
         anchors.rightMargin: 8
         anchors.verticalCenter: parent.verticalCenter
         text: Qt.formatDateTime(clock.date, "ddd d MMM  HH:mm")
-        color: "#ffffff"
+        color: "#cdd6f4"
         font.pixelSize: 14
     }
 }
