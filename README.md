@@ -8,12 +8,34 @@ so `shell.qml` is the default config: run it with plain `qs`.
 | `shell.qml` | Entry point: wallpaper and bar on each monitor, plus the launcher |
 | `Wallpaper.qml` | Desktop background: shows `wallpaper.jpg` on every monitor |
 | `wallpaper.jpg` | The background image (replace it to change the wallpaper) |
-| `Bar.qml` | Top bar: Hyprland workspaces (click to switch) and a clock |
+| `Bar.qml` | Transparent Catppuccin Mocha island bar: fixed workspaces 1–5, privacy badges, 12-hour clock |
+| `CalendarPopup.qml` | Click-clock calendar: opens at this month with today selected; month navigation and Today reset |
+| `PrivacyState.qml` | Shared PipeWire activity probe and default speaker/microphone mute state |
 | `Launcher.qml` | App launcher: type to filter, arrows to move, Enter to open, Esc to close |
 
 Open the launcher with `qs ipc call launcher toggle` (Super+T in Hyprland).
 
 For editor support (qmlls), create an empty `.qmlls.ini` here; Quickshell fills it in on start.
+
+## Bar
+
+The bar is 24 logical pixels high (20-pixel islands), with a constant zero
+exclusive zone. Hyprland's normal tiled workspaces use a fixed 24-pixel top gap;
+scratchpads and Quake-style terminals override that gap to start at the screen
+edge. While a special workspace is open, the bar sits behind windows but remains
+visible wherever uncovered; opening the calendar temporarily raises it. Only
+stacking changes, never monitor reservations or background workspace geometry.
+
+Click workspace numbers to switch; the active workspace is highlighted per monitor.
+Special workspaces and scratchpads never appear. Existing workspace 6–10 shortcuts
+are unchanged. Click the clock to open the calendar; click outside or press Escape
+to close it. Select any day, browse months, or click Today to reset.
+
+Status badges appear only for camera/microphone use, screen capture/sharing, or
+speaker/microphone mute. Hyprland's Super+M toggles **speaker** mute. Activity is
+sampled every two seconds using `pw-dump`; mute state is event-driven. Indicators
+only cover recognizable PipeWire streams, not direct V4L2 camera access or capture
+that bypasses PipeWire. They are convenience indicators, not a security guarantee.
 
 ## Setup
 

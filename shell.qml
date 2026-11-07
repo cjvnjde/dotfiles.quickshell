@@ -1,6 +1,9 @@
+pragma ComponentBehavior: Bound
+
 import Quickshell
 
 ShellRoot {
+    PrivacyState { id: privacyState }
     // One wallpaper and one bar per monitor
     Variants {
         model: Quickshell.screens
@@ -9,7 +12,7 @@ ShellRoot {
 
     Variants {
         model: Quickshell.screens
-        Bar {}
+        Bar { privacy: privacyState }
     }
 
     Launcher {}

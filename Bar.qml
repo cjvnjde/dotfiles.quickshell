@@ -1,56 +1,171 @@
+pragma ComponentBehavior: Bound
+
 import QtQuick
+import QtQuick.Controls
 import Quickshell
 import Quickshell.Hyprland
+import Quickshell.Wayland
 
 PanelWindow {
+    id: bar
     required property var modelData
+    required property var privacy
     screen: modelData
+    readonly property var monitor: Hyprland.monitorFor(screen)
+    readonly property bool specialOpen: !!monitor?.lastIpcObject?.specialWorkspace?.name
+    readonly property color base: "#1e1e2e"
+    readonly property color surface: "#313244"
+    readonly property color foreground: "#cdd6f4"
+    readonly property color lavender: "#b4befe"
+    readonly property string fontFamily: "FiraCode Nerd Font"
+    property bool calendarOpen: false
 
-    anchors {
-        top: true
-        left: true
-        right: true
+    anchors { top: true; left: true; right: true }
+    implicitHeight: 24
+    color: "transparent"
+    // Normal workspace gaps provide a fixed inset; special workspaces use none.
+    // Never change monitor reservations when a scratchpad or console is toggled.
+    exclusiveZone: 0
+    // Only change stacking, never geometry or the reserved area.
+    // An explicitly opened calendar remains usable above application windows.
+    WlrLayershell.layer: specialOpen && !calendarOpen ? WlrLayer.Bottom : WlrLayer.Top
+    Connections {
+        target: Hyprland
+        function onRawEvent(event) {
+            if (event.name.startsWith("activespecial")) Hyprland.refreshMonitors();
+        }
     }
-    implicitHeight: 26
-    color: "#1e1e2e"
+    // Empty space between the islands does not intercept pointer input.
+    mask: Region {
+        item: workspaceIsland
+        Region { item: rightIslands }
+    }
 
-    // Workspaces: click to switch
-    Row {
+    Rectangle {
+        id: workspaceIsland
         anchors.left: parent.left
-        anchors.leftMargin: 8
+        anchors.leftMargin: 4
         anchors.verticalCenter: parent.verticalCenter
-        spacing: 10
+        width: workspaceRow.width + 4
+        height: 20
+        radius: 4
+        color: bar.base
 
-        Repeater {
-            model: Hyprland.workspaces
-
-            Text {
-                id: ws
-                required property var modelData
-                text: modelData.name
-                color: Hyprland.focusedWorkspace === modelData ? "#b4befe" : "#6c7086"
-                font.pixelSize: 14
-
-                MouseArea {
-                    anchors.fill: parent
-                    onClicked: ws.modelData.activate()
+        Row {
+            id: workspaceRow
+            anchors.centerIn: parent
+            spacing: 1
+            Repeater {
+                model: 5
+                Rectangle {
+                    id: workspace
+                    required property int index
+                    readonly property int number: index + 1
+                    readonly property bool active: bar.monitor?.activeWorkspace?.id === number
+                    width: 20
+                    height: 16
+                    radius: 4
+                    color: active ? bar.lavender : (workspaceMouse.containsMouse ? bar.surface : "transparent")
+                    Text {
+                        anchors.fill: parent
+                        text: workspace.number
+                        horizontalAlignment: Text.AlignHCenter
+                        verticalAlignment: Text.AlignVCenter
+                        color: workspace.active ? bar.base : "#a6adc8"
+                        // Fixed text boxes and native glyph metrics avoid fractional
+                        // centering and the Nerd Font's extra vertical line padding.
+                        font { family: "sans-serif"; pixelSize: 11; weight: Font.DemiBold }
+                        renderType: Text.NativeRendering
+                    }
+                    MouseArea {
+                        id: workspaceMouse
+                        anchors.fill: parent
+                        hoverEnabled: true
+                        cursorShape: Qt.PointingHandCursor
+                        // Hyprland 0.57 uses Lua dispatch expressions (also creates empty workspaces).
+                        onClicked: Hyprland.dispatch("hl.dsp.focus({ workspace = " + workspace.number + " })")
+                    }
                 }
             }
         }
     }
 
-    // Clock
-    SystemClock {
-        id: clock
-        precision: SystemClock.Minutes
+    Row {
+        id: rightIslands
+        anchors.right: parent.right
+        anchors.rightMargin: 4
+        anchors.verticalCenter: parent.verticalCenter
+        spacing: 4
+
+        Rectangle {
+            visible: statusRow.width > 0
+            width: visible ? statusRow.width + 12 : 0
+            height: 20
+            radius: 6
+            color: bar.base
+            Row {
+                id: statusRow
+                anchors.centerIn: parent
+                spacing: 8
+                Repeater {
+                    model: [
+                        { show: bar.privacy.cameraActive, icon: "\uf030", label: "Camera in use", tint: "#a6e3a1" },
+                        { show: bar.privacy.microphoneActive && !bar.privacy.microphoneMuted, icon: "\uf130", label: "Microphone in use", tint: "#a6e3a1" },
+                        { show: bar.privacy.screenActive, icon: "\uf108", label: "Screen sharing / capture", tint: "#fab387" },
+                        { show: bar.privacy.microphoneMuted, icon: "\uf131", label: "Microphone muted", tint: "#f38ba8" },
+                        { show: bar.privacy.muted, icon: "\uf6a9", label: "Speakers muted · Super+M", tint: "#f9e2af" }
+                    ]
+                    Text {
+                        id: badge
+                        required property var modelData
+                        visible: modelData.show
+                        text: modelData.icon
+                        color: modelData.tint
+                        height: 20
+                        verticalAlignment: Text.AlignVCenter
+                        font { family: bar.fontFamily; pixelSize: 12 }
+                        ToolTip.visible: badgeMouse.containsMouse
+                        ToolTip.text: modelData.label
+                        MouseArea {
+                            id: badgeMouse
+                            anchors.fill: parent
+                            hoverEnabled: true
+                        }
+                    }
+                }
+            }
+        }
+
+        Rectangle {
+            id: clockIsland
+            width: clockLabel.width + 12
+            height: 20
+            radius: 6
+            color: bar.calendarOpen || clockMouse.containsMouse ? bar.surface : bar.base
+            Text {
+                id: clockLabel
+                anchors.centerIn: parent
+                text: Qt.formatDateTime(clock.date, "h:mm AP")
+                color: bar.foreground
+                font { family: bar.fontFamily; pixelSize: 12; bold: true }
+            }
+            MouseArea {
+                id: clockMouse
+                anchors.fill: parent
+                hoverEnabled: true
+                cursorShape: Qt.PointingHandCursor
+                onClicked: bar.calendarOpen = !bar.calendarOpen
+            }
+        }
     }
 
-    Text {
-        anchors.right: parent.right
-        anchors.rightMargin: 8
-        anchors.verticalCenter: parent.verticalCenter
-        text: Qt.formatDateTime(clock.date, "ddd d MMM  HH:mm")
-        color: "#cdd6f4"
-        font.pixelSize: 14
+    SystemClock { id: clock; precision: SystemClock.Minutes }
+    CalendarPopup {
+        anchor.item: clockIsland
+        anchor.rect.y: clockIsland.height + 4
+        anchor.rect.x: clockIsland.width - width
+        visible: bar.calendarOpen
+        today: clock.date
+        onDismissed: bar.calendarOpen = false
     }
 }
