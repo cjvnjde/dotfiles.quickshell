@@ -373,8 +373,9 @@ Scope {
             anchors.centerIn: parent
             width: Math.min(560, parent.width - 48)
             height: Math.min(436, parent.height - 96)
-            radius: 4
+            radius: 5
             color: root.theme.base
+            border { width: 1; color: root.theme.surface0 }
 
             MouseArea {
                 anchors.fill: parent

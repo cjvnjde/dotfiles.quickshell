@@ -17,8 +17,8 @@ PopupWindow {
     readonly property int firstWeekday: (month.getDay() + 6) % 7
     readonly property int daysInMonth: new Date(month.getFullYear(), month.getMonth() + 1, 0).getDate()
     readonly property int weekRows: Math.ceil((firstWeekday + daysInMonth) / 7)
-    implicitWidth: 240
-    implicitHeight: calendarContent.implicitHeight + 16
+    implicitWidth: 248
+    implicitHeight: calendarContent.implicitHeight + 24
     color: "transparent"
     grabFocus: true
 
@@ -40,7 +40,7 @@ PopupWindow {
         anchors.fill: parent
         color: "#1e1e2e"
         radius: 5
-        border.color: "#45475a"
+        border.color: "#313244"
         border.width: 1
         focus: true
         Keys.onEscapePressed: popup.dismissed()
@@ -49,7 +49,7 @@ PopupWindow {
             id: calendarContent
             anchors.top: parent.top
             anchors.left: parent.left
-            anchors.margins: 8
+            anchors.margins: 12
             spacing: 6
             Row {
                 width: 224
@@ -61,8 +61,8 @@ PopupWindow {
                     topInset: 0; bottomInset: 0
                     leftInset: 0; rightInset: 0
                     background: Rectangle {
-                        radius: 3
-                        color: previousMonth.hovered ? "#45475a" : "#313244"
+                        radius: 4
+                        color: previousMonth.hovered ? "#313244" : "transparent"
                     }
                     contentItem: Item {
                         Canvas {
@@ -100,8 +100,8 @@ PopupWindow {
                     topInset: 0; bottomInset: 0
                     leftInset: 0; rightInset: 0
                     background: Rectangle {
-                        radius: 3
-                        color: nextMonth.hovered ? "#45475a" : "#313244"
+                        radius: 4
+                        color: nextMonth.hovered ? "#313244" : "transparent"
                     }
                     contentItem: Item {
                         Canvas {
@@ -154,7 +154,7 @@ PopupWindow {
                             && popup.month.getMonth() === popup.selectedDate.getMonth()
                             && popup.month.getFullYear() === popup.selectedDate.getFullYear()
                         width: 32; height: 26
-                        radius: 3
+                        radius: 4
                         color: selected ? "#b4befe" : (dayMouse.containsMouse && valid ? "#313244" : "transparent")
                         border.width: isToday && !selected ? 1 : 0
                         border.color: "#b4befe"
@@ -184,7 +184,7 @@ PopupWindow {
                 horizontalAlignment: Text.AlignHCenter
                 verticalAlignment: Text.AlignVCenter
                 color: "#b4befe"
-                font { family: "FiraCode Nerd Font"; pixelSize: 11 }
+                font { family: "sans-serif"; pixelSize: 11 }
                 MouseArea {
                     anchors.fill: parent
                     cursorShape: Qt.PointingHandCursor

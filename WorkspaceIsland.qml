@@ -13,7 +13,7 @@ Rectangle {
 
     width: workspaceRow.width + 4
     height: 20
-    radius: 4
+    radius: 6
     color: base
 
     Row {
