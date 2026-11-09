@@ -6,6 +6,10 @@ import Quickshell
 
 PopupWindow {
     id: popup
+    required property Item target
+    anchor.item: target
+    anchor.rect.y: target.height + 4
+    anchor.rect.x: target.width - width
     signal dismissed()
     implicitWidth: 264
     implicitHeight: content.implicitHeight + 24

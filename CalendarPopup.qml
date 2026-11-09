@@ -6,6 +6,10 @@ import Quickshell
 
 PopupWindow {
     id: popup
+    required property Item target
+    anchor.item: target
+    anchor.rect.y: target.height + 4
+    anchor.rect.x: target.width - width
     required property date today
     signal dismissed()
     property date month: new Date(today.getFullYear(), today.getMonth(), 1)

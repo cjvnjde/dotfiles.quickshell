@@ -9,7 +9,11 @@ so `shell.qml` is the default config: run it with plain `qs`.
 | `Wallpaper.qml` | Desktop background: shows `wallpaper.jpg` on every monitor |
 | `wallpaper.jpg` | The background image (replace it to change the wallpaper) |
 | `BarTooltip.qml` | Hover hints for bar items (own popup, not clipped by the 24px bar) |
-| `Bar.qml` | Transparent Catppuccin Mocha island bar: fixed workspaces 1–5 plus higher workspaces on demand, grouped system tray, Bluetooth/privacy badges, sound controls, 12-hour clock |
+| `Bar.qml` | Per-monitor island layout, shared palette, input mask, layer selection, and popup coordination |
+| `WorkspaceIsland.qml` | Per-monitor active workspace and workspace buttons: fixed 1–5 plus higher workspaces on demand |
+| `StatusIsland.qml` | Auto-hiding Bluetooth/privacy/mute badges and their hover hints |
+| `AudioIsland.qml` | Output volume, scroll/middle-click controls, and ownership of the sound popup |
+| `CalendarIsland.qml` | 12-hour clock, minute updates, and ownership of the calendar popup |
 | `TrayIsland.qml` | All registered tray apps in one auto-hiding island, with activation, native menus, and hover names |
 | `CalendarPopup.qml` | Click-clock calendar: opens at this month with today selected; month navigation and Today reset |
 | `PrivacyState.qml` | Shared PipeWire activity probe and default speaker/microphone mute state |
@@ -33,6 +37,26 @@ to request calculation explicitly. Enter copies the current result.
 Arrow keys and PageUp/PageDown wrap through results, including short lists.
 
 ## Bar
+### Component boundaries
+
+Each `*Island.qml` owns its contents, sizing, interactions, and any popups.
+Islands receive explicit palette/font properties rather than reading a parent bar.
+`WorkspaceIsland` takes a `screen` and resolves its own Hyprland monitor;
+`StatusIsland` takes the shared `privacy` state and observes Bluetooth itself;
+`AudioIsland` takes only the tracked default `sink`. The calendar and tray
+islands use their own clock and system-tray services respectively.
+
+Audio and calendar islands expose an `open` property and emit `opened()` when
+opening. `Bar.qml` closes the other popup and uses those properties for layer
+selection; neither island references its sibling or the bar. Popup components
+take an explicit `target` item and position themselves below it, matching
+`BarTooltip.qml`.
+
+`shell.qml` still owns one `PrivacyState` shared across monitors, so extracting
+islands does not duplicate PipeWire polling or default-device tracking.
+
+### Behavior
+
 
 The bar is 24 logical pixels high (20-pixel islands), with a constant zero
 exclusive zone. Hyprland's normal tiled workspaces use a fixed 24-pixel top gap;
