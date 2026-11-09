@@ -18,8 +18,8 @@ so `shell.qml` is the default config: run it with plain `qs`.
 | `TrayIsland.qml` | All registered tray apps in one auto-hiding island, with activation, native menus, and hover names |
 | `CalendarPopup.qml` | Click-clock calendar: opens at this month with today selected; month navigation and Today reset |
 | `PrivacyState.qml` | Shared PipeWire activity probe and default speaker/microphone mute state |
-| `AudioPopup.qml` | Sound popup with output/input controls and a full-mixer shortcut |
-| `AudioControl.qml` | PipeWire volume slider, mute button, and device picker |
+| `AudioPopup.qml` | Compact sound popup with output and microphone controls |
+| `AudioControl.qml` | Two-row audio control: mute/label/device picker, then volume slider/percentage |
 | `Launcher.qml` | App launcher: type to filter, arrows to move, Enter to open, Esc to close |
 | `LauncherSearch.js` | Fuzzy matching, result ranking, and usage weighting |
 
@@ -89,16 +89,16 @@ Hypridle's configured idle listeners. Click again to restore the usual timeouts.
 Manual lock/suspend still work. State is shared across monitors, starts off on
 Quickshell startup/reload, and is released automatically when Quickshell exits.
 
-The sound island beside the clock always shows output volume. Click it for speaker
-and microphone volume sliders, mute buttons, and default-device selection. Scroll
-over the island to change output volume in 5% steps; middle-click to toggle speaker
-mute. Sliders and scrolling are capped at 100%. Click **Mixer ↗** for
-`pavucontrol`, including per-application controls. Outside click or Escape closes
-the popup. Volume and mute state follow PipeWire changes, including keyboard shortcuts.
+The sound island beside the clock always shows output volume. Click it for output
+and microphone controls: each has a mute icon, label, and default-device picker
+on the first row, with a volume slider and percentage below. Scroll over the island
+to change output volume in 5% steps; middle-click to toggle speaker mute. Sliders
+and scrolling are capped at 100%. Outside click or Escape closes the popup.
+Volume and mute state follow PipeWire changes, including keyboard shortcuts.
 
 Quickshell 0.3.2 does not expose volume controls for nodes classified as
-`Audio/Source/Virtual` (including some EasyEffects sources). Use **Mixer ↗**
-for devices unavailable in this picker.
+`Audio/Source/Virtual` (including some EasyEffects sources). Use an external mixer
+such as `pavucontrol` for devices unavailable in this picker.
 
 A blue Bluetooth icon appears only while at least one Bluetooth device is connected,
 and disappears when the last device disconnects. Connection state updates automatically.

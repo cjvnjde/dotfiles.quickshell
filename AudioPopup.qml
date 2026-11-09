@@ -1,7 +1,6 @@
 pragma ComponentBehavior: Bound
 
 import QtQuick
-import QtQuick.Controls
 import Quickshell
 
 PopupWindow {
@@ -31,26 +30,6 @@ PopupWindow {
             spacing: 10
             AudioControl { input: false }
             AudioControl { input: true }
-            Button {
-                id: mixerButton
-                width: 240; height: 20
-                text: "Mixer ↗"
-                background: Rectangle {
-                    radius: 4
-                    color: "transparent"
-                }
-                contentItem: Text {
-                    text: mixerButton.text
-                    color: mixerButton.hovered ? "#b4befe" : "#6c7086"
-                    horizontalAlignment: Text.AlignRight
-                    verticalAlignment: Text.AlignVCenter
-                    font.pixelSize: 11
-                }
-                onClicked: {
-                    Quickshell.execDetached(["pavucontrol"]);
-                    popup.dismissed();
-                }
-            }
         }
     }
 }
