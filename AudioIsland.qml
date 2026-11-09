@@ -16,17 +16,30 @@ Rectangle {
     readonly property string volumeIcon: muted ? "\uf466" : (volume > 50 ? "\uf028" : "\uf027")
     onOpenChanged: { if (open) opened(); }
 
-    width: audioLabel.width + 16
+    width: Math.max(height, audioContent.width + height - audioContent.height)
     height: 20
     radius: 6
     color: open || audioMouse.containsMouse ? surface : base
 
-    Text {
-        id: audioLabel
+    Row {
+        id: audioContent
         anchors.centerIn: parent
-        text: island.volumeIcon + " " + (island.sink ? island.volume + "%" : "—")
-        color: island.muted ? "#f9e2af" : island.foreground
-        font { family: island.fontFamily; pixelSize: 12 }
+        height: Math.max(audioIcon.height, audioLabel.height)
+        spacing: 2
+        BarIcon {
+            id: audioIcon
+            anchors.verticalCenter: parent.verticalCenter
+            text: island.volumeIcon
+            color: island.muted ? "#f9e2af" : island.foreground
+            fontFamily: island.fontFamily
+        }
+        BarText {
+            id: audioLabel
+            anchors.verticalCenter: parent.verticalCenter
+            text: island.sink ? island.volume + "%" : "—"
+            color: island.muted ? "#f9e2af" : island.foreground
+            font { family: "sans-serif"; pixelSize: 11 }
+        }
     }
     BarTooltip {
         target: island

@@ -13,17 +13,17 @@ Rectangle {
     signal opened()
     onOpenChanged: { if (open) opened(); }
 
-    width: clockLabel.width + 12
+    width: Math.max(height, clockLabel.width + height - clockLabel.height)
     height: 20
     radius: 6
     color: open || clockMouse.containsMouse ? surface : base
 
-    Text {
+    BarText {
         id: clockLabel
         anchors.centerIn: parent
         text: Qt.formatDateTime(clock.date, "h:mm AP")
         color: island.foreground
-        font { family: island.fontFamily; pixelSize: 12; bold: true }
+        font { family: island.fontFamily; pixelSize: 11; weight: Font.DemiBold }
     }
     MouseArea {
         id: clockMouse

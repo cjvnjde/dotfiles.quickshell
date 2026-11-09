@@ -8,11 +8,13 @@ Rectangle {
     id: tray
     required property color base
     required property color surface
+    readonly property int inset: 2
+    readonly property int buttonRadius: 3
 
     visible: icons.width > 0
-    width: visible ? icons.width + 8 : 0
+    width: visible ? Math.max(height, icons.width + 2 * inset) : 0
     height: 20
-    radius: 6
+    radius: buttonRadius + inset
     color: base
 
     Row {
@@ -26,18 +28,18 @@ Rectangle {
             Rectangle {
                 id: button
                 required property SystemTrayItem modelData
-                width: 20
-                height: 20
-                radius: 4
+                width: height
+                height: tray.height - 2 * tray.inset
+                radius: tray.buttonRadius
                 color: mouse.containsMouse || menu.visible ? tray.surface : "transparent"
                 Accessible.name: modelData.title || modelData.id
 
                 Image {
                     anchors.centerIn: parent
-                    width: 16
-                    height: 16
+                    width: 12
+                    height: 12
                     source: button.modelData.icon
-                    sourceSize: Qt.size(16, 16)
+                    sourceSize: Qt.size(width, height)
                     fillMode: Image.PreserveAspectFit
                 }
 

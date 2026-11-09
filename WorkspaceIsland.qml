@@ -10,10 +10,12 @@ Rectangle {
     required property color surface
     required property color lavender
     readonly property var monitor: Hyprland.monitorFor(screen)
+    readonly property int inset: 2
+    readonly property int cellRadius: 3
 
-    width: workspaceRow.width + 4
-    height: 20
-    radius: 6
+    width: Math.max(height, workspaceRow.width + 2 * inset)
+    height: workspaceRow.height + 2 * inset
+    radius: cellRadius + inset
     color: base
 
     Row {
@@ -36,11 +38,12 @@ Rectangle {
                 required property int modelData
                 readonly property int number: modelData
                 readonly property bool active: island.monitor?.activeWorkspace?.id === number
-                width: 20
+                width: Math.max(height, workspaceLabel.implicitWidth + 4)
                 height: 16
-                radius: 4
+                radius: island.cellRadius
                 color: active ? island.lavender : (workspaceMouse.containsMouse ? island.surface : "transparent")
                 Text {
+                    id: workspaceLabel
                     anchors.fill: parent
                     text: workspace.number
                     horizontalAlignment: Text.AlignHCenter

@@ -3,7 +3,7 @@
 ## Islands
 - Independent `*Island.qml` components own contents, sizing, interactions, and popups. Pass explicit dependencies and palette/font properties; never reach into parents or siblings.
 - `Bar.qml` owns layout, click-through input masks, stacking, and popup coordination. Audio/calendar expose `open` and `opened()`; opening one closes the other. Popups take a `target`, sit 4px below it, and dismiss on Escape/outside click.
-- Geometry: 24px bar, 20px islands, 4px outer margins/gaps; transparent between islands. Keep `exclusiveZone: 0`; special workspaces change stacking, not geometry. Hide empty tray/status islands.
+- Geometry: 24px bar, 20px islands, 4px outer margins/gaps; transparent between islands. Visible islands have a square minimum (`width >= height`) and grow with content. Keep `exclusiveZone: 0`; special workspaces change stacking, not geometry. Hide empty tray/status islands.
 - Share privacy tracking and keep-awake state in `shell.qml`, not per monitor.
 
 ## Style
@@ -21,10 +21,11 @@ Catppuccin Mocha:
 | Bluetooth / activity / screen capture | `#89b4fa` / `#a6e3a1` / `#fab387` |
 | Muted audio control or mic / muted speaker badge | `#f38ba8` / `#f9e2af` |
 
-- **Radii:** islands 6px; popup/launcher cards 5px; controls, cells, tooltips 4px. Card borders: 1px `#313244`. Tooltips: raised `#313244` background, `#45475a` border.
-- **Spacing:** popup padding 12px, internal gaps usually 4–6px, audio sections 10px apart. Size to content; retain the calendar grid and larger launcher layout.
-- **Fonts:** `sans-serif` 11px for popup labels, secondary text, tooltips, workspace numbers; 12px calendar headings/dates. `FiraCode Nerd Font` 12px bar text/icons; launcher 14px text, 16px search/tool glyphs. Bold sparingly.
+- **Radii:** standalone islands 6px; popup/launcher cards 5px; controls, cells, tooltips 3px. Tightly nested corners must be concentric: outer radius = inner radius + uniform inset. Workspace/tray use 3px controls + 2px inset = 5px outer radius. Card borders: 1px `#313244`. Tooltips: raised `#313244` background, `#45475a` border.
+- **Bar spacing/alignment:** measure visible ink with `BarText`/`BarIcon`, not font line boxes. Center both axes. Match horizontal padding to vertical padding: `(island height - content height) / 2`, subject to the square minimum. Workspace/tray use 2px outer insets and 16px cells; tray artwork is 12px. Inter-content gaps: 2px.
+- **Popup spacing:** padding 12px, internal gaps usually 4–6px, audio sections 10px apart. Size to content; retain the calendar grid and larger launcher layout.
+- **Fonts:** `sans-serif` 11px for bar text, popup labels, secondary text, tooltips, workspace numbers; 12px calendar popup headings/dates. Bar icons use `FiraCode Nerd Font`, fitted to a maximum 12px artwork box and centered by ink bounds. Launcher keeps 14px text, 16px search/tool glyphs. Bold sparingly.
 - **States:** transparent controls, `#313244` hover/open; lavender active/selected fills with background-colored text. Launcher selection stays muted. Preserve semantic status colors, accessible names, and hover hints.
-- **Audio proportions:** 24px first-row controls, 3px slider track, 8px circular handle; secondary percentages and elided device names.
+- **Audio proportions:** 24px first-row controls, 3px slider track, 8px rounded handle (3px radius); secondary percentages and elided device names.
 
 Run `qs` and inspect affected surfaces after styling changes. Reuse existing patterns; do not introduce another theme system or unrelated behavior changes.

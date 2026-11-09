@@ -61,7 +61,7 @@ PopupWindow {
                     topInset: 0; bottomInset: 0
                     leftInset: 0; rightInset: 0
                     background: Rectangle {
-                        radius: 4
+                        radius: 3
                         color: previousMonth.hovered ? "#313244" : "transparent"
                     }
                     contentItem: Item {
@@ -100,7 +100,7 @@ PopupWindow {
                     topInset: 0; bottomInset: 0
                     leftInset: 0; rightInset: 0
                     background: Rectangle {
-                        radius: 4
+                        radius: 3
                         color: nextMonth.hovered ? "#313244" : "transparent"
                     }
                     contentItem: Item {
@@ -154,7 +154,7 @@ PopupWindow {
                             && popup.month.getMonth() === popup.selectedDate.getMonth()
                             && popup.month.getFullYear() === popup.selectedDate.getFullYear()
                         width: 32; height: 26
-                        radius: 4
+                        radius: 3
                         color: selected ? "#b4befe" : (dayMouse.containsMouse && valid ? "#313244" : "transparent")
                         border.width: isToday && !selected ? 1 : 0
                         border.color: "#b4befe"

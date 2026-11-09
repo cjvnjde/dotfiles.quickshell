@@ -11,7 +11,7 @@ Rectangle {
     readonly property bool bluetoothConnected: Bluetooth.devices.values.some(device => device.connected)
 
     visible: statusRow.width > 0
-    width: visible ? statusRow.width + 12 : 0
+    width: visible ? Math.max(height, statusRow.width + height - statusRow.height) : 0
     height: 20
     radius: 6
     color: base
@@ -19,8 +19,11 @@ Rectangle {
     Row {
         id: statusRow
         anchors.centerIn: parent
-        spacing: 8
+        height: children.reduce((tallest, child) =>
+            child === badges || !child.modelData.show ? tallest : Math.max(tallest, child.height), 0)
+        spacing: 2
         Repeater {
+            id: badges
             model: [
                 { show: island.bluetoothConnected, icon: "\uf294", label: "Bluetooth connected", tint: "#89b4fa" },
                 { show: island.privacy.cameraActive, icon: "\uf030", label: "Camera in use", tint: "#a6e3a1" },
@@ -29,15 +32,14 @@ Rectangle {
                 { show: island.privacy.microphoneMuted, icon: "\uf131", label: "Microphone muted · Super+M", tint: "#f38ba8" },
                 { show: island.privacy.muted, icon: "\uf466", label: "Speakers muted", tint: "#f9e2af" }
             ]
-            Text {
+            BarIcon {
                 id: badge
                 required property var modelData
+                anchors.verticalCenter: parent.verticalCenter
                 visible: modelData.show
                 text: modelData.icon
                 color: modelData.tint
-                height: 20
-                verticalAlignment: Text.AlignVCenter
-                font { family: island.fontFamily; pixelSize: 12 }
+                fontFamily: island.fontFamily
                 Accessible.name: modelData.label
                 MouseArea {
                     id: badgeMouse

@@ -392,7 +392,7 @@ Scope {
                     margins: 12
                 }
                 height: 42
-                radius: 4
+                radius: 3
                 color: root.theme.mantle
 
                 Text {
@@ -547,7 +547,7 @@ Scope {
 
                     width: ListView.view.width
                     height: 44
-                    radius: 4
+                    radius: 3
                     color: selected ? root.theme.surface0 : hovered ? root.theme.mantle : "transparent"
 
                     Item {

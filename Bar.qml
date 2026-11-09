@@ -93,7 +93,7 @@ PanelWindow {
             base: bar.base
             surface: bar.surface
             foreground: bar.foreground
-            fontFamily: bar.fontFamily
+            fontFamily: "sans-serif"
             onOpened: audioIsland.open = false
         }
     }

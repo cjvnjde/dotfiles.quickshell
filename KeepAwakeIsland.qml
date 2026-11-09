@@ -13,7 +13,7 @@ Rectangle {
     required property color lavender
     required property string fontFamily
 
-    width: 32
+    width: Math.max(height, toggleIcon.width + height - toggleIcon.height)
     height: 20
     radius: 6
     color: island.keepAwake.enabled || toggleMouse.containsMouse ? surface : base
@@ -23,11 +23,12 @@ Rectangle {
         enabled: island.keepAwake.enabled
     }
 
-    Text {
+    BarIcon {
+        id: toggleIcon
         anchors.centerIn: parent
         text: island.keepAwake.enabled ? "\uf0f4" : "\uf186"
         color: island.keepAwake.enabled ? island.lavender : island.foreground
-        font { family: island.fontFamily; pixelSize: 12 }
+        fontFamily: island.fontFamily
     }
     BarTooltip {
         target: island

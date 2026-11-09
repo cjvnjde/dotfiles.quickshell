@@ -10,6 +10,8 @@ so `shell.qml` is the default config: run it with plain `qs`.
 | `wallpaper.jpg` | The background image (replace it to change the wallpaper) |
 | `BarTooltip.qml` | Hover hints for bar items (own popup, not clipped by the 24px bar) |
 | `Bar.qml` | Per-monitor island layout, shared palette, input mask, layer selection, and popup coordination |
+| `BarText.qml` | Native-rendered text sized to visible ink, without font leading or side bearings |
+| `BarIcon.qml` | Ink-sized Nerd Font glyphs fitted to the same 12px artwork limit as tray icons |
 | `WorkspaceIsland.qml` | Per-monitor active workspace and workspace buttons: fixed 1–5 plus higher workspaces on demand |
 | `StatusIsland.qml` | Auto-hiding Bluetooth/privacy/mute badges and their hover hints |
 | `KeepAwakeIsland.qml` | Coffee/moon toggle with a Wayland idle inhibitor and shared state across monitors |

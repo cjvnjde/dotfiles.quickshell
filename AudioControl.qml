@@ -26,7 +26,7 @@ Column {
                 ? (control.node?.audio?.muted ? "\uf131" : "\uf130")
                 : (control.node?.audio?.muted ? "\uf466" : "\uf028")
             background: Rectangle {
-                radius: 4
+                radius: 3
                 color: muteButton.hovered ? "#313244" : "transparent"
             }
             contentItem: Text {
@@ -62,7 +62,7 @@ Column {
                 else Pipewire.preferredDefaultAudioSink = control.devices[index];
             }
             background: Rectangle {
-                radius: 4
+                radius: 3
                 color: devicePicker.hovered ? "#313244" : "transparent"
             }
             contentItem: Text {
@@ -112,7 +112,7 @@ Column {
             handle: Rectangle {
                 x: volumeSlider.leftPadding + volumeSlider.visualPosition * (volumeSlider.availableWidth - width)
                 y: volumeSlider.topPadding + volumeSlider.availableHeight / 2 - height / 2
-                width: 8; height: 8; radius: 4
+                width: 8; height: 8; radius: 3
                 color: volumeSlider.pressed ? "#cdd6f4" : "#b4befe"
             }
         }
