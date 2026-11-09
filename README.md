@@ -12,6 +12,7 @@ so `shell.qml` is the default config: run it with plain `qs`.
 | `Bar.qml` | Per-monitor island layout, shared palette, input mask, layer selection, and popup coordination |
 | `WorkspaceIsland.qml` | Per-monitor active workspace and workspace buttons: fixed 1–5 plus higher workspaces on demand |
 | `StatusIsland.qml` | Auto-hiding Bluetooth/privacy/mute badges and their hover hints |
+| `KeepAwakeIsland.qml` | Coffee/moon toggle with a Wayland idle inhibitor and shared state across monitors |
 | `AudioIsland.qml` | Output volume, scroll/middle-click controls, and ownership of the sound popup |
 | `CalendarIsland.qml` | 12-hour clock, minute updates, and ownership of the calendar popup |
 | `TrayIsland.qml` | All registered tray apps in one auto-hiding island, with activation, native menus, and hover names |
@@ -54,6 +55,8 @@ take an explicit `target` item and position themselves below it, matching
 
 `shell.qml` still owns one `PrivacyState` shared across monitors, so extracting
 islands does not duplicate PipeWire polling or default-device tracking.
+The keep-awake toggle also shares one state in `shell.qml`; each monitor's
+island binds an idle inhibitor to its own bar window.
 
 ### Behavior
 
@@ -78,6 +81,13 @@ an app (or opens its menu for menu-only apps); right-click opens its menu.
 Middle-click and scrolling are forwarded to the app. Hover to see the app's name.
 Native tray menus require the `UseQApplication` pragma in `shell.qml`; restart
 Quickshell once when adding this pragma, since hot reload cannot change application mode.
+
+The moon/coffee island beside the sound controls toggles keep-awake mode.
+Moon means normal idle behavior; a highlighted coffee cup means automatic
+locking, screen-off, and suspend are inhibited through Wayland, including
+Hypridle's configured idle listeners. Click again to restore the usual timeouts.
+Manual lock/suspend still work. State is shared across monitors, starts off on
+Quickshell startup/reload, and is released automatically when Quickshell exits.
 
 The sound island beside the clock always shows output volume. Click it for speaker
 and microphone volume sliders, mute buttons, and default-device selection. Scroll

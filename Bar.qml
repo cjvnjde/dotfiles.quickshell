@@ -9,6 +9,7 @@ PanelWindow {
     id: bar
     required property var modelData
     required property var privacy
+    required property var keepAwake
     screen: modelData
     readonly property var monitor: Hyprland.monitorFor(screen)
     readonly property bool specialOpen: !!monitor?.lastIpcObject?.specialWorkspace?.name
@@ -65,6 +66,15 @@ PanelWindow {
         StatusIsland {
             privacy: bar.privacy
             base: bar.base
+            fontFamily: bar.fontFamily
+        }
+
+        KeepAwakeIsland {
+            keepAwake: bar.keepAwake
+            base: bar.base
+            surface: bar.surface
+            foreground: bar.foreground
+            lavender: bar.lavender
             fontFamily: bar.fontFamily
         }
 
