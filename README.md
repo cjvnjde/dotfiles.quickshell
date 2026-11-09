@@ -9,7 +9,8 @@ so `shell.qml` is the default config: run it with plain `qs`.
 | `Wallpaper.qml` | Desktop background: shows `wallpaper.jpg` on every monitor |
 | `wallpaper.jpg` | The background image (replace it to change the wallpaper) |
 | `BarTooltip.qml` | Hover hints for bar items (own popup, not clipped by the 24px bar) |
-| `Bar.qml` | Transparent Catppuccin Mocha island bar: fixed workspaces 1–5 plus higher workspaces on demand, Bluetooth/privacy badges, sound controls, 12-hour clock |
+| `Bar.qml` | Transparent Catppuccin Mocha island bar: fixed workspaces 1–5 plus higher workspaces on demand, grouped system tray, Bluetooth/privacy badges, sound controls, 12-hour clock |
+| `TrayIsland.qml` | All registered tray apps in one auto-hiding island, with activation, native menus, and hover names |
 | `CalendarPopup.qml` | Click-clock calendar: opens at this month with today selected; month navigation and Today reset |
 | `PrivacyState.qml` | Shared PipeWire activity probe and default speaker/microphone mute state |
 | `AudioPopup.qml` | Sound popup with output/input controls and a full-mixer shortcut |
@@ -45,6 +46,14 @@ Workspaces 1–5 are always shown; higher numbered workspaces appear while they
 exist and disappear when Hyprland removes them after they become empty and inactive.
 Special workspaces and scratchpads never appear. Click the clock to open the calendar; click outside or press Escape
 to close it. Select any day, browse months, or click Today to reset.
+
+The leftmost island in the right-hand block groups system tray apps such as Telegram
+and Steam. It appears automatically when apps register tray icons and disappears
+when none remain; it is not a list of every running process. Left-click activates
+an app (or opens its menu for menu-only apps); right-click opens its menu.
+Middle-click and scrolling are forwarded to the app. Hover to see the app's name.
+Native tray menus require the `UseQApplication` pragma in `shell.qml`; restart
+Quickshell once when adding this pragma, since hot reload cannot change application mode.
 
 The sound island beside the clock always shows output volume. Click it for speaker
 and microphone volume sliders, mute buttons, and default-device selection. Scroll

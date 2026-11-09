@@ -110,6 +110,11 @@ PanelWindow {
         anchors.verticalCenter: parent.verticalCenter
         spacing: 4
 
+        TrayIsland {
+            base: bar.base
+            surface: bar.surface
+        }
+
         Rectangle {
             visible: statusRow.width > 0
             width: visible ? statusRow.width + 12 : 0
