@@ -58,9 +58,28 @@ PanelWindow {
         anchors.verticalCenter: parent.verticalCenter
         spacing: 4
 
-        TrayIsland {
+        IslandGroup {
+            direction: Qt.LeftEdge
             base: bar.base
             surface: bar.surface
+            foreground: bar.foreground
+            lavender: bar.lavender
+            holdOpen: trayIsland.open
+
+            TrayIsland {
+                id: trayIsland
+                base: bar.base
+                surface: bar.surface
+            }
+
+            KeepAwakeIsland {
+                keepAwake: bar.keepAwake
+                base: bar.base
+                surface: bar.surface
+                foreground: bar.foreground
+                lavender: bar.lavender
+                fontFamily: bar.fontFamily
+            }
         }
 
         StatusIsland {
@@ -69,14 +88,6 @@ PanelWindow {
             fontFamily: bar.fontFamily
         }
 
-        KeepAwakeIsland {
-            keepAwake: bar.keepAwake
-            base: bar.base
-            surface: bar.surface
-            foreground: bar.foreground
-            lavender: bar.lavender
-            fontFamily: bar.fontFamily
-        }
 
         AudioIsland {
             id: audioIsland

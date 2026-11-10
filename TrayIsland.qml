@@ -10,6 +10,13 @@ Rectangle {
     required property color surface
     readonly property int inset: 2
     readonly property int buttonRadius: 3
+    // A containing group must stay expanded while a native tray menu is in use.
+    readonly property bool open: {
+        for (let i = 0; i < trayItems.count; ++i) {
+            if (trayItems.itemAt(i)?.menuOpen) return true;
+        }
+        return false;
+    }
 
     visible: icons.width > 0
     width: visible ? Math.max(height, icons.width + 2 * inset) : 0
@@ -23,11 +30,13 @@ Rectangle {
         spacing: 2
 
         Repeater {
+            id: trayItems
             model: SystemTray.items
 
             Rectangle {
                 id: button
                 required property SystemTrayItem modelData
+                readonly property bool menuOpen: menu.visible
                 width: height
                 height: tray.height - 2 * tray.inset
                 radius: tray.buttonRadius

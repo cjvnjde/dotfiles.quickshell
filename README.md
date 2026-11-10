@@ -10,6 +10,7 @@ so `shell.qml` is the default config: run it with plain `qs`.
 | `wallpaper.jpg` | The background image (replace it to change the wallpaper) |
 | `BarTooltip.qml` | Hover hints for bar items (own popup, not clipped by the 24px bar) |
 | `Bar.qml` | Per-monitor island layout, shared palette, input mask, layer selection, and popup coordination |
+| `IslandGroup.qml` | Reusable left/right collapsible group: hover to reveal, click its arrow to pin or close |
 | `BarText.qml` | Native-rendered text sized to visible ink, without font leading or side bearings |
 | `BarIcon.qml` | Ink-sized Nerd Font glyphs fitted to the same 12px artwork limit as tray icons |
 | `WorkspaceIsland.qml` | Per-monitor active workspace and workspace buttons: fixed 1–5 plus higher workspaces on demand |
@@ -60,6 +61,39 @@ islands does not duplicate PipeWire polling or default-device tracking.
 The keep-awake toggle also shares one state in `shell.qml`; each monitor's
 island binds an idle inhibitor to its own bar window.
 
+### Collapsible groups
+
+`Bar.qml` places the tray and keep-awake islands inside one `IslandGroup`.
+The tray contains apps that register status icons, not every background process.
+Hover the arrow to reveal the children; opening and closing use the same 200 ms
+slide with the fade tied to the slide progress. Moving between children or across
+their gaps keeps them open; leaving starts the closing animation. Click the arrow
+to pin it open (lavender); click again to collapse even while still hovering.
+Leave and re-enter to reveal it again.
+Child controls keep their own actions and do not toggle the group.
+
+To make another group, instantiate `IslandGroup` and put any island instances
+inside it, passing their usual explicit dependencies and palette properties.
+The group itself takes `base`, `surface`, `foreground`, and `lavender`.
+Each instance has independent hover/pin state, reset on shell startup/reload.
+
+- `direction: Qt.LeftEdge` (default): children appear left of the arrow.
+- `direction: Qt.RightEdge`: children appear right of the arrow.
+
+Use a right-anchored layout for leftward expansion or a left-anchored layout
+for rightward expansion so the arrow stays in place while the group grows.
+`spacing` controls child gaps and the gap before the arrow (default 4 pixels).
+Bind `holdOpen` to child popup state when needed, for example
+`holdOpen: trayIsland.open`. `TrayIsland.open` reports any visible native menu,
+so entering its menu does not collapse the containing group.
+
+Pointer interaction and dynamic-child regression checks:
+
+```bash
+QT_QPA_PLATFORM=offscreen /usr/lib/qt6/bin/qmltestrunner -input tests/tst_IslandGroup.qml
+```
+
+
 ### Behavior
 
 
@@ -76,15 +110,15 @@ exist and disappear when Hyprland removes them after they become empty and inact
 Special workspaces and scratchpads never appear. Click the clock to open the calendar; click outside or press Escape
 to close it. Select any day, browse months, or click Today to reset.
 
-The leftmost island in the right-hand block groups system tray apps such as Telegram
-and Steam. It appears automatically when apps register tray icons and disappears
-when none remain; it is not a list of every running process. Left-click activates
+The tray island inside the collapsible group shows apps such as Telegram and Steam.
+It appears automatically when apps register tray icons and disappears when none
+remain; it is not a list of every running process. Left-click activates
 an app (or opens its menu for menu-only apps); right-click opens its menu.
 Middle-click and scrolling are forwarded to the app. Hover to see the app's name.
 Native tray menus require the `UseQApplication` pragma in `shell.qml`; restart
 Quickshell once when adding this pragma, since hot reload cannot change application mode.
 
-The moon/coffee island beside the sound controls toggles keep-awake mode.
+The moon/coffee island inside the same collapsible group toggles keep-awake mode.
 Moon means normal idle behavior; a highlighted coffee cup means automatic
 locking, screen-off, and suspend are inhibited through Wayland, including
 Hypridle's configured idle listeners. Click again to restore the usual timeouts.
